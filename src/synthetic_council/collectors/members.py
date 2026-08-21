@@ -101,11 +101,18 @@ def parse_members_page(html: str) -> list[tuple[str, str]]:
     current card layout (<div class="title">Name</div>...<p>ROLE</p>).
     """
     entries: list[tuple[str, str]] = []
-    # legacy layout
+    # legacy layout (<strong>Name</strong> ... <br/> ROLE)
     for m in re.finditer(r"<strong>([^<]+)</strong>.*?<br/>\s*([^<]+?)\s*</div>", html, re.S):
         entries.append((m.group(1).strip(), m.group(2).strip()))
+    # 2015-2020 layout: <p class="ecb-imgTitle">Name</p> ... <p class="ecb-imgDesc">ROLE</p>
     if not entries:
-        # current card layout
+        for m in re.finditer(
+            r'class="ecb-imgTitle">\s*([^<]+?)\s*</p>\s*<p class="ecb-imgDesc">\s*([^<]+?)\s*</p>',
+            html, re.S,
+        ):
+            entries.append((m.group(1).strip(), m.group(2).strip()))
+    # current card layout
+    if not entries:
         for m in re.finditer(
             r'class="title">([^<]+)</div>.*?<p>([^<]+)</p>', html, re.S
         ):
@@ -204,9 +211,19 @@ def build_memberships(snapshots: list[str], max_snaps: int | None = None) -> lis
             for name, role_desc in entries:
                 role, iso = normalise_role(name, role_desc)
                 observations.append((date, canonicalise(name), role, iso, f"wayback:{ts}"))
-    # merge observations into tenures
+    # merge observations into tenures (drop junk person names at source)
+    _junk = (
+        lambda n: not n
+        or len(n) < 5
+        or len(n) > 60
+        or any(ch.isdigit() for ch in n)
+        or any(s in n for s in ("<", ">", "{", "}", "+", "innerHTML", "Council",
+                                "stability", "Insights"))
+    )
     tenures: dict[tuple[str, str], dict] = {}
     for date, person, role, iso, source in sorted(observations):
+        if _junk(person):
+            continue
         key = (person, role)
         t = tenures.get(key)
         if t is None:
