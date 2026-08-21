@@ -78,14 +78,26 @@ def fetch_rate_change_table() -> pl.DataFrame:
         r.raise_for_status()
     rows = re.findall(r"<tr[^>]*>(.*?)</tr>", r.text, re.S)
     months = {
-        "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
-        "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+        "jan": 1,
+        "feb": 2,
+        "mar": 3,
+        "apr": 4,
+        "may": 5,
+        "jun": 6,
+        "jul": 7,
+        "aug": 8,
+        "sep": 9,
+        "oct": 10,
+        "nov": 11,
+        "dec": 12,
     }
     recs: list[tuple[str, float, float, float]] = []
     year = None
     for row in rows:
-        cells = [re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
-                 for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)]
+        cells = [
+            re.sub(r"<[^>]+>", "", c).replace("&nbsp;", " ").strip()
+            for c in re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", row, re.S)
+        ]
         if not cells:
             continue
         if re.fullmatch(r"(19|20)\d{2}", cells[0]):  # year group header
@@ -104,9 +116,18 @@ def fetch_rate_change_table() -> pl.DataFrame:
                 continue
             recs.append((f"{year}-{mon:02d}-{day:02d}", dfr, mro, mlf))
     return pl.DataFrame(
-        {"date": [r[0] for r in recs], "dfr": [r[1] for r in recs],
-         "mro": [r[2] for r in recs], "mlf": [r[3] for r in recs]},
-        schema={"date": pl.String, "dfr": pl.Float64, "mro": pl.Float64, "mlf": pl.Float64},
+        {
+            "date": [r[0] for r in recs],
+            "dfr": [r[1] for r in recs],
+            "mro": [r[2] for r in recs],
+            "mlf": [r[3] for r in recs],
+        },
+        schema={
+            "date": pl.String,
+            "dfr": pl.Float64,
+            "mro": pl.Float64,
+            "mlf": pl.Float64,
+        },
     ).sort("date")
 
 
@@ -127,8 +148,12 @@ def fetch_meeting_calendar() -> pl.DataFrame:
         is_mp = "monetary policy meeting" in desc
         is_day2 = "Day 2" in desc or "press conference" in desc
         recs.append(
-            {"date": d, "description": desc, "is_monetary_policy": is_mp,
-             "is_decision_day": is_mp and is_day2}
+            {
+                "date": d,
+                "description": desc,
+                "is_monetary_policy": is_mp,
+                "is_decision_day": is_mp and is_day2,
+            }
         )
     return pl.DataFrame(recs).sort("date")
 
@@ -142,9 +167,7 @@ def decisions_from_daily_rates(daily: pl.DataFrame) -> pl.DataFrame:
     """Derive decision events: first day each facility level changes vs prior day."""
     df = daily.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
     for c in ("mro", "dfr", "mlf"):
-        df = df.with_columns(
-            (pl.col(c) != pl.col(c).shift(1)).alias(f"_chg_{c}")
-        )
+        df = df.with_columns((pl.col(c) != pl.col(c).shift(1)).alias(f"_chg_{c}"))
     df = df.with_columns(
         (pl.col("_chg_mro") | pl.col("_chg_dfr") | pl.col("_chg_mlf")).alias("changed")
     )

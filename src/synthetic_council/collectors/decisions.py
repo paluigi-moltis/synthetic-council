@@ -20,13 +20,13 @@ Cross-validation performed at collect time:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import polars as pl
 
 from synthetic_council.collectors.foedb import fetch_all
 from synthetic_council.collectors.rates import fetch_key_rates
-from synthetic_council.config import PROCESSED_DIR, RAW_DIR
+from synthetic_council.config import PROCESSED_DIR
 
 MAX_EFFECTIVE_LAG_DAYS = 11
 
@@ -37,7 +37,10 @@ def build() -> pl.DataFrame:
     )
 
     pubs, _ = fetch_all()
-    mopo = pubs.filter(pl.col("title") == "Monetary policy decisions").sort("published_at")
+    mopo = pubs.filter(pl.col("title") == "Monetary policy decisions").sort(
+        "published_at"
+    )
+
     # canonical English URL (plain python loop: map_elements probes UDFs with a Series)
     def en_url(urls) -> str:
         urls = list(urls or [])
@@ -49,12 +52,18 @@ def build() -> pl.DataFrame:
     url_col = [en_url(u) for u in mopo["document_urls"].to_list()]
     mopo = mopo.with_columns(
         pl.Series("press_release_url", url_col, dtype=pl.String),
-        pl.col("published_at").dt.convert_time_zone("UTC").dt.date().alias("announcement_date"),
+        pl.col("published_at")
+        .dt.convert_time_zone("UTC")
+        .dt.date()
+        .alias("announcement_date"),
     )
 
     # rate-change effective dates
     chg = daily.with_columns(
-        [(pl.col(c) != pl.col(c).shift(1)).alias(f"c_{c}") for c in ("mro", "dfr", "mlf")]
+        [
+            (pl.col(c) != pl.col(c).shift(1)).alias(f"c_{c}")
+            for c in ("mro", "dfr", "mlf")
+        ]
     ).filter(pl.col("c_mro") | pl.col("c_dfr") | pl.col("c_mlf"))
     effective = chg.select(pl.col("date").alias("effective_date"), "mro", "dfr", "mlf")
 
@@ -64,28 +73,53 @@ def build() -> pl.DataFrame:
     for m in mopo.iter_rows(named=True):
         a = m["announcement_date"]
         cand = [
-            e for e in eff_list
-            if timedelta(0) <= (e["effective_date"] - a) <= timedelta(days=MAX_EFFECTIVE_LAG_DAYS)
+            e
+            for e in eff_list
+            if timedelta(0)
+            <= (e["effective_date"] - a)
+            <= timedelta(days=MAX_EFFECTIVE_LAG_DAYS)
         ]
         if cand:
             e = cand[0]
             used.add(e["effective_date"])
-            rows.append({**m, "rate_effective_date": e["effective_date"],
-                         "decision": "change", "mro": e["mro"], "dfr": e["dfr"], "mlf": e["mlf"]})
+            rows.append(
+                {
+                    **m,
+                    "rate_effective_date": e["effective_date"],
+                    "decision": "change",
+                    "mro": e["mro"],
+                    "dfr": e["dfr"],
+                    "mlf": e["mlf"],
+                }
+            )
         else:
             lvl = daily.filter(pl.col("date") <= a).sort("date").tail(1)
-            rows.append({
-                **m, "rate_effective_date": None, "decision": "hold",
-                "mro": lvl["mro"][0], "dfr": lvl["dfr"][0], "mlf": lvl["mlf"][0],
-            })
+            rows.append(
+                {
+                    **m,
+                    "rate_effective_date": None,
+                    "decision": "hold",
+                    "mro": lvl["mro"][0],
+                    "dfr": lvl["dfr"][0],
+                    "mlf": lvl["mlf"][0],
+                }
+            )
 
     df = pl.DataFrame(rows)
     unmatched = sorted({e["effective_date"] for e in eff_list} - used)
     if unmatched:
-        print(f"WARNING: {len(unmatched)} rate-change dates matched no announcement: {unmatched}")
+        print(
+            f"WARNING: {len(unmatched)} rate-change dates matched no announcement: {unmatched}"
+        )
     return df.select(
-        "announcement_date", "decision", "rate_effective_date", "mro", "dfr", "mlf",
-        "press_release_url", "published_at",
+        "announcement_date",
+        "decision",
+        "rate_effective_date",
+        "mro",
+        "dfr",
+        "mlf",
+        "press_release_url",
+        "published_at",
     ).sort("announcement_date")
 
 

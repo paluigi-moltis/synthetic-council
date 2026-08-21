@@ -28,7 +28,7 @@ from dataclasses import dataclass
 import httpx
 import polars as pl
 
-from synthetic_council.config import RAW_DIR, USER_AGENT
+from synthetic_council.config import USER_AGENT
 
 ESTAT_SDMX = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data/{ds}"
 ECB_API = "https://data-api.ecb.europa.eu/service/data"
@@ -36,11 +36,51 @@ ECFIN_ZIP = (
     "https://ec.europa.eu/economy_finance/db_indicators/surveys/documents/"
     "series/nace2_ecfin_{stamp}/main_indicators_sa_nace2.zip"
 )
-EA_COUNTRIES = ["AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "GR", "HR", "IE",
-                "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"]
+EA_COUNTRIES = [
+    "AT",
+    "BE",
+    "CY",
+    "DE",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "GR",
+    "HR",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "MT",
+    "NL",
+    "PT",
+    "SI",
+    "SK",
+]
 # Eurostat geo uses EL for Greece, DG-ECFIN uses EL too
-ESTAT_GEOS = ["AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "EL", "HR", "IE",
-              "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"]
+ESTAT_GEOS = [
+    "AT",
+    "BE",
+    "CY",
+    "DE",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "EL",
+    "HR",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "MT",
+    "NL",
+    "PT",
+    "SI",
+    "SK",
+]
 
 
 @dataclass
@@ -50,12 +90,15 @@ class MacroVintagesResult:
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True)
+    return httpx.Client(
+        headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True
+    )
 
 
 # ---------------------------------------------------------------------------
 # PEEI vintage datasets (TSV wide -> tidy)
 # ---------------------------------------------------------------------------
+
 
 def _parse_vtg_tsv(raw: bytes) -> pl.DataFrame:
     """Eurostat vintage TSV: key-dims \\ time columns; tidy to long format."""
@@ -68,7 +111,7 @@ def _parse_vtg_tsv(raw: bytes) -> pl.DataFrame:
     value_cols = df.select(df.columns[1:]).to_dict(as_series=False)
     for row_i, key_str in enumerate(keys):
         parts = key_str.split(",")
-        dims = dict(zip(dim_names, parts))
+        dims = dict(zip(dim_names, parts, strict=False))
         for col in df.columns[1:]:
             v = value_cols[col][row_i]
             if v is None:
@@ -82,20 +125,24 @@ def _parse_vtg_tsv(raw: bytes) -> pl.DataFrame:
                 continue
             records.append({**dims, "period": col.strip(), "value": float(m.group(1))})
     return pl.DataFrame(
-        {"revdate": [r["revdate"] for r in records],
-         "geo": [r.get("geo", "") for r in records],
-         "unit": [r.get("unit", "") for r in records],
-         "s_adj": [r.get("s_adj", "") for r in records],
-         "nace_r2": [r.get("nace_r2", "") for r in records],
-         "period": [r["period"] for r in records],
-         "value": [r["value"] for r in records]},
+        {
+            "revdate": [r["revdate"] for r in records],
+            "geo": [r.get("geo", "") for r in records],
+            "unit": [r.get("unit", "") for r in records],
+            "s_adj": [r.get("s_adj", "") for r in records],
+            "nace_r2": [r.get("nace_r2", "") for r in records],
+            "period": [r["period"] for r in records],
+            "value": [r["value"] for r in records],
+        },
         schema_overrides={"value": pl.Float64},
     )
 
 
 def download_peei(ds: str) -> pl.DataFrame:
     with _client() as c:
-        r = c.get(ESTAT_SDMX.format(ds=ds), params={"format": "TSV", "compressed": "true"})
+        r = c.get(
+            ESTAT_SDMX.format(ds=ds), params={"format": "TSV", "compressed": "true"}
+        )
         r.raise_for_status()
     return _parse_vtg_tsv(gzip_decompress(r.content))
 
@@ -106,8 +153,9 @@ def gzip_decompress(b: bytes) -> bytes:
     return gzip.decompress(b)
 
 
-def asof_vintage(vtg: pl.DataFrame, meetings: pl.DataFrame, geo: str,
-                 filters: dict | None = None) -> pl.DataFrame:
+def asof_vintage(
+    vtg: pl.DataFrame, meetings: pl.DataFrame, geo: str, filters: dict | None = None
+) -> pl.DataFrame:
     """Latest vintage <= meeting date for each reference period (one geo)."""
     df = vtg.filter(pl.col("geo") == geo)
     if filters:
@@ -115,14 +163,17 @@ def asof_vintage(vtg: pl.DataFrame, meetings: pl.DataFrame, geo: str,
             df = df.filter(pl.col(k) == v)
     df = df.with_columns(pl.col("revdate").str.to_date("%Y-%m-%d")).sort("revdate")
     # for each period: value at latest revdate <= meeting
-    out = meetings.select(pl.col("announcement_date")).unique().join_where(
-        df,
-        pl.col("revdate") <= pl.col("announcement_date"),
+    out = (
+        meetings.select(pl.col("announcement_date"))
+        .unique()
+        .join_where(
+            df,
+            pl.col("revdate") <= pl.col("announcement_date"),
+        )
     )
-    latest = (
-        out.sort(["announcement_date", "revdate"], descending=[False, True])
-        .unique(subset=["announcement_date", "period"], keep="first")
-    )
+    latest = out.sort(
+        ["announcement_date", "revdate"], descending=[False, True]
+    ).unique(subset=["announcement_date", "period"], keep="first")
     return latest
 
 
@@ -130,26 +181,33 @@ def asof_vintage(vtg: pl.DataFrame, meetings: pl.DataFrame, geo: str,
 # ECB sources
 # ---------------------------------------------------------------------------
 
+
 def fetch_ciss() -> pl.DataFrame:
     with _client() as c:
-        r = c.get(f"{ECB_API}/CISS/D.U2.Z0Z.4F.EC.SS_CIN.IDX",
-                  params={"format": "csvdata", "startPeriod": "1999-01"})
+        r = c.get(
+            f"{ECB_API}/CISS/D.U2.Z0Z.4F.EC.SS_CIN.IDX",
+            params={"format": "csvdata", "startPeriod": "1999-01"},
+        )
         r.raise_for_status()
     df = pl.read_csv(io.BytesIO(r.content))
-    return (df.select(pl.col("TIME_PERIOD").str.to_date("%Y-%m-%d").alias("date"),
-                      pl.col("OBS_VALUE").cast(pl.Float64).alias("ciss"))
-              .sort("date"))
+    return df.select(
+        pl.col("TIME_PERIOD").str.to_date("%Y-%m-%d").alias("date"),
+        pl.col("OBS_VALUE").cast(pl.Float64).alias("ciss"),
+    ).sort("date")
 
 
 def fetch_ea_unemployment() -> pl.DataFrame:
     with _client() as c:
-        r = c.get(f"{ECB_API}/LFSI/M.U2.S.UNEHRT.TOTAL0.15_74.T",
-                  params={"format": "csvdata", "startPeriod": "1997-01"})
+        r = c.get(
+            f"{ECB_API}/LFSI/M.U2.S.UNEHRT.TOTAL0.15_74.T",
+            params={"format": "csvdata", "startPeriod": "1997-01"},
+        )
         r.raise_for_status()
     df = pl.read_csv(io.BytesIO(r.content))
-    return (df.select(pl.col("TIME_PERIOD").alias("period"),
-                      pl.col("OBS_VALUE").cast(pl.Float64).alias("unemp_ea"))
-              .sort("period"))
+    return df.select(
+        pl.col("TIME_PERIOD").alias("period"),
+        pl.col("OBS_VALUE").cast(pl.Float64).alias("unemp_ea"),
+    ).sort("period")
 
 
 def fetch_rtd_hicp_with_history() -> pl.DataFrame:
@@ -162,9 +220,14 @@ def fetch_rtd_hicp_with_history() -> pl.DataFrame:
     2020-04-29, rebased 2026-02-04.)
     """
     with _client() as c:
-        r = c.get(f"{ECB_API}/RTD/M.S0.N.P_C_OV.X",
-                  params={"format": "csvdata", "startPeriod": "1997-01",
-                          "includeHistory": "true"})
+        r = c.get(
+            f"{ECB_API}/RTD/M.S0.N.P_C_OV.X",
+            params={
+                "format": "csvdata",
+                "startPeriod": "1997-01",
+                "includeHistory": "true",
+            },
+        )
         r.raise_for_status()
     df = pl.read_csv(io.BytesIO(r.content), infer_schema=False)
     return (
@@ -175,7 +238,10 @@ def fetch_rtd_hicp_with_history() -> pl.DataFrame:
             pl.col("VALID_FROM").alias("valid_from"),
         )
         .with_columns(
-            pl.col("valid_from").str.slice(0, 10).str.to_date("%Y-%m-%d").alias("revdate")
+            pl.col("valid_from")
+            .str.slice(0, 10)
+            .str.to_date("%Y-%m-%d")
+            .alias("revdate")
         )
         .filter(pl.col("action") != "Delete")
     )
@@ -184,6 +250,7 @@ def fetch_rtd_hicp_with_history() -> pl.DataFrame:
 # ---------------------------------------------------------------------------
 # DG-ECFIN sentiment
 # ---------------------------------------------------------------------------
+
 
 def fetch_sentiment() -> pl.DataFrame:
     """Download main_indicators xlsx, tidy to (period, geo, indicator, value)."""
@@ -206,7 +273,9 @@ def fetch_sentiment() -> pl.DataFrame:
             raise RuntimeError("DG-ECFIN surveys zip not found in last 8 months")
     z = zipfile.ZipFile(io.BytesIO(raw))
     name = next(n for n in z.namelist() if n.endswith(".xlsx"))
-    df = pl.read_excel(io.BytesIO(z.read(name)), sheet_name="MONTHLY", infer_schema_length=0)
+    df = pl.read_excel(
+        io.BytesIO(z.read(name)), sheet_name="MONTHLY", infer_schema_length=0
+    )
     df = df.rename({df.columns[0]: "period"})
     records = []
     cols = df.columns[1:]
@@ -224,8 +293,14 @@ def fetch_sentiment() -> pl.DataFrame:
             if not m:
                 continue
             geo, indic = str(c).split(".", 1)
-            records.append({"period": str(p)[:10], "geo": geo, "indic": indic,
-                            "value": float(m.group(1))})
+            records.append(
+                {
+                    "period": str(p)[:10],
+                    "geo": geo,
+                    "indic": indic,
+                    "value": float(m.group(1)),
+                }
+            )
     out = pl.DataFrame(records)
     # normalize end-of-month dates to month start
     return out.with_columns(

@@ -53,9 +53,13 @@ def round_date(seas: str) -> str | None:
 
 def rounds_frame(df: pl.DataFrame) -> pl.DataFrame:
     """Annotate MPD rows with round publication dates; keep headline items."""
-    out = df.filter(
-        pl.col("PD_SEAS_EX").str.contains(r"^[WASG](0[0-9]|1[0-9]|2[0-9])$")
-    ).with_columns(
-        pl.col("PD_SEAS_EX").map_elements(round_date, return_dtype=pl.String).alias("round_date")
-    ).filter(pl.col("round_date").is_not_null())
+    out = (
+        df.filter(pl.col("PD_SEAS_EX").str.contains(r"^[WASG](0[0-9]|1[0-9]|2[0-9])$"))
+        .with_columns(
+            pl.col("PD_SEAS_EX")
+            .map_elements(round_date, return_dtype=pl.String)
+            .alias("round_date")
+        )
+        .filter(pl.col("round_date").is_not_null())
+    )
     return out

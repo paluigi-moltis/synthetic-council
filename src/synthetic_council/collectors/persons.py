@@ -2,8 +2,11 @@
 
 # canonical name -> known variants (as printed on ECB GC pages over time)
 CANONICAL = {
-    "Vítor Constâncio": ["Vítor Manuel Ribeiro Constâncio", "Victor Constancio",
-                         "Vitor Constancio"],
+    "Vítor Constâncio": [
+        "Vítor Manuel Ribeiro Constâncio",
+        "Victor Constancio",
+        "Vitor Constancio",
+    ],
     "Mario Draghi": ["Mario Draghi"],
     "Jean-Claude Trichet": ["Jean-Claude Trichet"],
     "Lucas Papademos": ["Lucas D. Papademos"],
@@ -14,7 +17,10 @@ CANONICAL = {
     "Nout Wellink": ["Nout Wellink"],
     "Axel A. Weber": ["Axel Weber", "Axel A. Weber"],
     "Erkki Liikanen": ["Erkki Liikanen"],
-    "Miguel Fernández Ordóñez": ["Miguel Fernández Ordóñez", "Miguel Fernández-Ordóñez"],
+    "Miguel Fernández Ordóñez": [
+        "Miguel Fernández Ordóñez",
+        "Miguel Fernández-Ordóñez",
+    ],
     "Georgios Provopoulos": ["George Provopoulos", "Georgios A. Provopoulos"],
     "Athanasios Orphanides": ["Athanasios Orphanides"],
     "Michael C. Bonello": ["Michael Bonello"],

@@ -20,13 +20,12 @@ def _asof_from_vintages(
     """Vintage-correct as-of: a (period, value) row is valid from its revdate until
     the next revision of the SAME period. At meeting d take the latest valid
     reference period."""
-    v = v.with_columns(
-        pl.col("revdate").shift(-1).over("period").alias("next_revdate")
-    )
+    v = v.with_columns(pl.col("revdate").shift(-1).over("period").alias("next_revdate"))
     j = dates.join_where(
         v,
         pl.col("revdate") <= pl.col("announcement_date"),
-        pl.col("next_revdate").is_null() | (pl.col("announcement_date") < pl.col("next_revdate")),
+        pl.col("next_revdate").is_null()
+        | (pl.col("announcement_date") < pl.col("next_revdate")),
     )
     return (
         j.sort(["announcement_date", "period"], descending=[False, True])
@@ -46,14 +45,23 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
 
     Returns long panel: announcement_date | geo (EA or ISO2) | indicator | ref_period | value
     """
-    dates = meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
+    dates = (
+        meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
+    )
     out: list[pl.DataFrame] = []
 
     # --- EA HICP (true vintages, RTD) ---
     hicp = fetch_rtd_hicp_with_history().sort(["period", "revdate"])
-    hicp = hicp.with_columns(
-        pl.col("hicp_ea").shift(12).over("__vintage__" if False else "period").alias("__unused__")
-    ) if False else hicp
+    hicp = (
+        hicp.with_columns(
+            pl.col("hicp_ea")
+            .shift(12)
+            .over("__vintage__" if False else "period")
+            .alias("__unused__")
+        )
+        if False
+        else hicp
+    )
     # compute yoy within each vintage window: index level 12 months earlier under
     # the vintage visible at the row's own validity interval
     hicp = hicp.with_columns(
@@ -62,58 +70,82 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
     # for each period, the index level 12m before *as known at that time*: join
     # period-12 row whose validity interval covers this row's revdate
     hicp = hicp.with_columns(
-        (pl.col("period").str.slice(0, 4).cast(pl.Int32) * 12
-         + pl.col("period").str.slice(5, 2).cast(pl.Int32)).alias("pm")
+        (
+            pl.col("period").str.slice(0, 4).cast(pl.Int32) * 12
+            + pl.col("period").str.slice(5, 2).cast(pl.Int32)
+        ).alias("pm")
     ).with_columns((pl.col("pm") - 12).alias("pm_prev"))
-    lag = hicp.select(
-        "pm", "revdate", "next_revdate", pl.col("hicp_ea").alias("prev")
-    )
-    hicp = hicp.join(
-        lag,
-        left_on=["pm_prev"],
-        right_on=["pm"],
-        how="left",
-    ).filter(
-        (pl.col("revdate_right") <= pl.col("revdate"))
-        & (
-            pl.col("next_revdate_right").is_null()
-            | (pl.col("revdate") < pl.col("next_revdate_right"))
+    lag = hicp.select("pm", "revdate", "next_revdate", pl.col("hicp_ea").alias("prev"))
+    hicp = (
+        hicp.join(
+            lag,
+            left_on=["pm_prev"],
+            right_on=["pm"],
+            how="left",
         )
-    ).with_columns(
-        ((pl.col("hicp_ea") / pl.col("prev") - 1) * 100).alias("hicp_yoy")
+        .filter(
+            (pl.col("revdate_right") <= pl.col("revdate"))
+            & (
+                pl.col("next_revdate_right").is_null()
+                | (pl.col("revdate") < pl.col("next_revdate_right"))
+            )
+        )
+        .with_columns(
+            ((pl.col("hicp_ea") / pl.col("prev") - 1) * 100).alias("hicp_yoy")
+        )
     )
     ea_hicp = _asof_from_vintages(
-        hicp.filter(pl.col("hicp_yoy").is_not_null())
-        .select("revdate", "period", "hicp_yoy"),
-        dates, "hicp_yoy", "hicp_yoy", "EA",
+        hicp.filter(pl.col("hicp_yoy").is_not_null()).select(
+            "revdate", "period", "hicp_yoy"
+        ),
+        dates,
+        "hicp_yoy",
+        "hicp_yoy",
+        "EA",
     )
     out.append(ea_hicp)
 
     # --- EA GDP growth (true vintages, PEEI) ---
-    gdp = download_peei("ei_na_q_vtg").filter(
-        (pl.col("geo") == "EA") & (pl.col("s_adj") == "SCA")
-    ).with_columns(pl.col("revdate").str.to_date("%Y-%m-%d")).sort(["period", "revdate"])
+    gdp = (
+        download_peei("ei_na_q_vtg")
+        .filter((pl.col("geo") == "EA") & (pl.col("s_adj") == "SCA"))
+        .with_columns(pl.col("revdate").str.to_date("%Y-%m-%d"))
+        .sort(["period", "revdate"])
+    )
     # growth: yoy % from levels within each vintage validity interval
     gdp = gdp.with_columns(
         pl.col("revdate").shift(-1).over("period").alias("next_revdate")
     )
     gdp = gdp.with_columns(
-        pl.col("period").str.replace("Q", "-Q").str.split("-").list.first().cast(pl.Int32).alias("y"),
+        pl.col("period")
+        .str.replace("Q", "-Q")
+        .str.split("-")
+        .list.first()
+        .cast(pl.Int32)
+        .alias("y"),
         pl.col("period").str.slice(-1).cast(pl.Int32).alias("q"),
     ).with_columns((pl.col("y") * 4 + pl.col("q")).alias("qmi"))
     lag_g = gdp.select("qmi", "revdate", "next_revdate", pl.col("value").alias("prev"))
-    gdp = gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev")).join(
-        lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left"
-    ).filter(
-        (pl.col("revdate_right") <= pl.col("revdate"))
-        & (
-            pl.col("next_revdate_right").is_null()
-            | (pl.col("revdate") < pl.col("next_revdate_right"))
+    gdp = (
+        gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev"))
+        .join(lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left")
+        .filter(
+            (pl.col("revdate_right") <= pl.col("revdate"))
+            & (
+                pl.col("next_revdate_right").is_null()
+                | (pl.col("revdate") < pl.col("next_revdate_right"))
+            )
         )
-    ).with_columns(((pl.col("value") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
+        .with_columns(((pl.col("value") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
+    )
     ea_gdp = _asof_from_vintages(
-        gdp.filter(pl.col("gdp_yoy").is_not_null()).select("revdate", "period", "gdp_yoy"),
-        dates, "gdp_yoy", "gdp_yoy", "EA",
+        gdp.filter(pl.col("gdp_yoy").is_not_null()).select(
+            "revdate", "period", "gdp_yoy"
+        ),
+        dates,
+        "gdp_yoy",
+        "gdp_yoy",
+        "EA",
     )
     out.append(ea_gdp)
 
@@ -121,9 +153,15 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
     ciss = fetch_ciss()
     ea_ciss = (
         dates.sort("announcement_date")
-        .join_asof(ciss.sort("date"), left_on="announcement_date", right_on="date", strategy="backward")
+        .join_asof(
+            ciss.sort("date"),
+            left_on="announcement_date",
+            right_on="date",
+            strategy="backward",
+        )
         .select(
-            "announcement_date", pl.lit("EA").alias("geo"),
+            "announcement_date",
+            pl.lit("EA").alias("geo"),
             pl.lit("ciss").alias("indicator"),
             pl.col("date").cast(pl.String).alias("ref_period"),
             pl.col("ciss").alias("value"),
@@ -133,31 +171,61 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
 
     # --- EA unemployment (LFSI monthly, 1-month lag) ---
     unemp = fetch_ea_unemployment().with_columns(
-        (pl.col("period").str.slice(0, 4).cast(pl.Int32) * 12
-         + pl.col("period").str.slice(5, 2).cast(pl.Int32)).alias("pm")
+        (
+            pl.col("period").str.slice(0, 4).cast(pl.Int32) * 12
+            + pl.col("period").str.slice(5, 2).cast(pl.Int32)
+        ).alias("pm")
     )
     dates_m = dates.with_columns(
-        ((pl.col("announcement_date").dt.year() * 12 + pl.col("announcement_date").dt.month()) - 1).alias("pm_avail")
+        (
+            (
+                pl.col("announcement_date").dt.year() * 12
+                + pl.col("announcement_date").dt.month()
+            )
+            - 1
+        ).alias("pm_avail")
     ).sort("pm_avail")
-    ea_unemp = (
-        dates_m.join_asof(unemp.sort("pm"), left_on="pm_avail", right_on="pm", strategy="backward")
-        .select(
-            "announcement_date", pl.lit("EA").alias("geo"),
-            pl.lit("unemp").alias("indicator"), pl.col("period").alias("ref_period"),
-            pl.col("unemp_ea").alias("value"),
-        )
+    ea_unemp = dates_m.join_asof(
+        unemp.sort("pm"), left_on="pm_avail", right_on="pm", strategy="backward"
+    ).select(
+        "announcement_date",
+        pl.lit("EA").alias("geo"),
+        pl.lit("unemp").alias("indicator"),
+        pl.col("period").alias("ref_period"),
+        pl.col("unemp_ea").alias("value"),
     )
     out.append(ea_unemp)
 
     # --- Sentiment (DG-ECFIN; reference month available within the month) ---
-    EA_MEMBERS = {"AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "EL", "GR", "HR", "IE",
-                  "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK"}
+    EA_MEMBERS = {
+        "AT",
+        "BE",
+        "CY",
+        "DE",
+        "EE",
+        "ES",
+        "FI",
+        "FR",
+        "EL",
+        "GR",
+        "HR",
+        "IE",
+        "IT",
+        "LT",
+        "LU",
+        "LV",
+        "MT",
+        "NL",
+        "PT",
+        "SI",
+        "SK",
+    }
     sent = fetch_sentiment().filter(
         pl.col("indic").is_in(["ESI", "CONS"])
         & (pl.col("geo").is_in(sorted(EA_MEMBERS)) | (pl.col("geo") == "EA"))
     )
     for geo in ["EA"] + sorted(set(sent["geo"].unique().to_list()) - {"EA"}):
-        s = sent.filter((pl.col("geo") == geo)).sort("period")
+        s = sent.filter(pl.col("geo") == geo).sort("period")
         if s.height == 0:
             continue
         for indic in ["ESI", "CONS"]:
@@ -166,11 +234,19 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
                 continue
             asof = (
                 dates.sort("announcement_date")
-                .with_columns(pl.col("announcement_date").dt.truncate("1mo").alias("am"))
-                .join_asof(si.sort("period"), left_on="am", right_on="period", strategy="backward")
+                .with_columns(
+                    pl.col("announcement_date").dt.truncate("1mo").alias("am")
+                )
+                .join_asof(
+                    si.sort("period"),
+                    left_on="am",
+                    right_on="period",
+                    strategy="backward",
+                )
                 .filter(pl.col("value").is_not_null())
                 .select(
-                    "announcement_date", pl.lit(geo).alias("geo"),
+                    "announcement_date",
+                    pl.lit(geo).alias("geo"),
                     pl.lit(f"sent_{indic.lower()}").alias("indicator"),
                     pl.col("period").cast(pl.String).alias("ref_period"),
                     pl.col("value"),

@@ -15,7 +15,6 @@ date) and every monetary policy decision meeting, produce a 1-2 page markdown me
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 from pathlib import Path
 
 import jinja2
@@ -29,11 +28,27 @@ from synthetic_council.collectors.mpd_rounds import (
 from synthetic_council.config import PROCESSED_DIR, RAW_DIR
 
 COUNTRY_NAMES = {
-    "AT": "Austria", "BE": "Belgium", "CY": "Cyprus", "DE": "Germany", "EE": "Estonia",
-    "ES": "Spain", "FI": "Finland", "FR": "France", "EL": "Greece", "GR": "Greece",
-    "HR": "Croatia", "IE": "Ireland", "IT": "Italy", "LT": "Lithuania", "LU": "Luxembourg",
-    "LV": "Latvia", "MT": "Malta", "NL": "Netherlands", "PT": "Portugal",
-    "SI": "Slovenia", "SK": "Slovakia",
+    "AT": "Austria",
+    "BE": "Belgium",
+    "CY": "Cyprus",
+    "DE": "Germany",
+    "EE": "Estonia",
+    "ES": "Spain",
+    "FI": "Finland",
+    "FR": "France",
+    "EL": "Greece",
+    "GR": "Greece",
+    "HR": "Croatia",
+    "IE": "Ireland",
+    "IT": "Italy",
+    "LT": "Lithuania",
+    "LU": "Luxembourg",
+    "LV": "Latvia",
+    "MT": "Malta",
+    "NL": "Netherlands",
+    "PT": "Portugal",
+    "SI": "Slovenia",
+    "SK": "Slovakia",
 }
 
 MEMO_TEMPLATE = """# Briefing memo — {{ member.person }}
@@ -41,18 +56,20 @@ MEMO_TEMPLATE = """# Briefing memo — {{ member.person }}
 **Role:** {{ member.role }}
 {% if member.country %}**Country:** {{ country_name }}
 {% endif %}**Meeting:** GC monetary policy meeting, {{ meeting.announcement_date }}
-**Current rates:** MRO {{ "%.2f"|format(meeting.mro) }}% · DFR {{ "%.2f"|format(meeting.dfr) }}% · MLF {{ "%.2f"|format(meeting.mlf) }}%
+**Current rates:** MRO {{ meeting.mro }}% · DFR {{ meeting.dfr }}% · MLF {{ meeting.mlf }}%
 
 ## Euro area economic situation (data available at the meeting)
 
 | Indicator | Reference | Value |
 |---|---|---|
-{% for row in ea_rows %}| {{ row.indicator }} | {{ row.ref_period }} | {{ "%.2f"|format(row.value) if row.value is not none else "n/a" }} |
+{% for row in ea_rows %}| {{ row.indicator }} | {{ row.ref_period }} | {{ row.value }} |
 {% endfor %}
 
 ## Latest staff projections available at the meeting
 
-{% for proj in projections %}- **{{ proj.round }}** ({{ proj.item }}): {% for t in proj.targets %}{{ t.year }}: {{ t.value }} {% endfor %}
+{% for proj in projections %}- **{{ proj.round }}**
+  ({{ proj.item }}):
+  {% for t in proj.targets %}{{ t.year }}: {{ t.value }} {% endfor %}
 {% endfor %}
 
 {% if country_rows %}
@@ -60,7 +77,7 @@ MEMO_TEMPLATE = """# Briefing memo — {{ member.person }}
 
 | Indicator | Reference | Value |
 |---|---|---|
-{% for row in country_rows %}| {{ row.indicator }} | {{ row.ref_period }} | {{ "%.2f"|format(row.value) if row.value is not none else "n/a" }} |
+{% for row in country_rows %}| {{ row.indicator }} | {{ row.ref_period }} | {{ row.value }} |
 {% endfor %}
 {% endif %}
 
@@ -93,6 +110,16 @@ def _indicator_label(ind: str) -> str:
         "sent_esi": "Economic Sentiment Indicator",
         "sent_cons": "Consumer confidence",
     }.get(ind, ind)
+
+
+def _fmt(v) -> str:
+    """Format a numeric value for the memo tables."""
+    if v is None:
+        return "n/a"
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return str(v)
 
 
 def _proj_round_available(projections: pl.DataFrame, meeting_date) -> pl.DataFrame:
@@ -131,13 +158,15 @@ def build_memos(
             (pl.col("start").str.to_date() <= d)
             & (pl.col("end").str.to_date() + pl.duration(days=45) >= d)
         )
-        ea_rows = (
-            macro.filter((pl.col("announcement_date") == d) & (pl.col("geo") == "EA"))
-            .sort("indicator")
-        )
+        ea_rows = macro.filter(
+            (pl.col("announcement_date") == d) & (pl.col("geo") == "EA")
+        ).sort("indicator")
         ea_out = [
-            {"indicator": _indicator_label(r["indicator"]),
-             "ref_period": r["ref_period"], "value": r["value"]}
+            {
+                "indicator": _indicator_label(r["indicator"]),
+                "ref_period": r["ref_period"],
+                "value": _fmt(r["value"]),
+            }
             for r in ea_rows.iter_rows(named=True)
         ]
         # projections: latest round before meeting, EA, headline items
@@ -154,17 +183,23 @@ def build_memos(
                 & pl.col("TIME_PERIOD").str.contains(r"^\d{4}$")
             ).filter(
                 # forward-looking targets only (MPD includes interpolated backdata)
-                pl.col("TIME_PERIOD").cast(pl.Int32) >= round_year
+                pl.col("TIME_PERIOD").cast(pl.Int32)
+                >= round_year
             )
             for item in HEADLINE:
                 rows = ea_proj.filter(pl.col("PD_ITEM") == item).sort("TIME_PERIOD")
                 if not rows.height:
                     continue
-                proj_out.append({
-                    "round": last_round, "item": ITEM_LABELS.get(item, item),
-                    "targets": [{"year": r["TIME_PERIOD"], "value": r["OBS_VALUE"]}
-                                for r in rows.iter_rows(named=True)],
-                })
+                proj_out.append(
+                    {
+                        "round": last_round,
+                        "item": ITEM_LABELS.get(item, item),
+                        "targets": [
+                            {"year": r["TIME_PERIOD"], "value": r["OBS_VALUE"]}
+                            for r in rows.iter_rows(named=True)
+                        ],
+                    }
+                )
         for a in attendees.iter_rows(named=True):
             country_rows = []
             if a["country"]:
@@ -173,8 +208,11 @@ def build_memos(
                     (pl.col("announcement_date") == d) & (pl.col("geo") == cgeo)
                 ).sort("indicator")
                 country_rows = [
-                    {"indicator": _indicator_label(r["indicator"]),
-                     "ref_period": r["ref_period"], "value": r["value"]}
+                    {
+                        "indicator": _indicator_label(r["indicator"]),
+                        "ref_period": r["ref_period"],
+                        "value": _fmt(r["value"]),
+                    }
                     for r in crows.iter_rows(named=True)
                 ]
             sp = last_speech.filter(
@@ -188,14 +226,19 @@ def build_memos(
                 words = text.split()
                 excerpt = " ".join(words[:150]) + ("…" if len(words) > 150 else "")
                 last_speech_ctx = {
-                    "title": sp_row["title"], "speech_date": str(sp_row["speech_date"]),
+                    "title": sp_row["title"],
+                    "speech_date": str(sp_row["speech_date"]),
                     "excerpt": excerpt,
                 }
             md = tpl.render(
                 member=a,
                 country_name=COUNTRY_NAMES.get(a["country"] or "", ""),
-                meeting={"announcement_date": str(d), "mro": m["mro"] or 0,
-                         "dfr": m["dfr"] or 0, "mlf": m["mlf"] or 0},
+                meeting={
+                    "announcement_date": str(d),
+                    "mro": m["mro"] or 0,
+                    "dfr": m["dfr"] or 0,
+                    "mlf": m["mlf"] or 0,
+                },
                 ea_rows=ea_out,
                 projections=proj_out,
                 country_rows=country_rows,
@@ -214,7 +257,12 @@ if __name__ == "__main__":
     projections = pl.read_parquet(RAW_DIR / "mpd_projections.parquet")
     last_speech = pl.read_parquet(PROCESSED_DIR / "last_speech_before_meeting.parquet")
     res = build_memos(
-        meetings, memberships, macro, projections, last_speech,
-        Path("data/processed/memos"), meetings_limit=3,
+        meetings,
+        memberships,
+        macro,
+        projections,
+        last_speech,
+        Path("data/processed/memos"),
+        meetings_limit=3,
     )
     print(res)

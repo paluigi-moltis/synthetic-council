@@ -23,9 +23,19 @@ from synthetic_council.config import RAW_DIR, USER_AGENT
 
 FOEDB_BASE = "https://www.ecb.europa.eu/foedb/dbs/foedb/publications.en"
 RECORD_COLUMNS = [
-    "id", "pub_timestamp", "year", "issue_number", "type", "JEL_Code", "Taxonomy",
-    "boardmember", "Authors", "documentTypes", "publicationProperties",
-    "childrenPublication", "relatedPublications",
+    "id",
+    "pub_timestamp",
+    "year",
+    "issue_number",
+    "type",
+    "JEL_Code",
+    "Taxonomy",
+    "boardmember",
+    "Authors",
+    "documentTypes",
+    "publicationProperties",
+    "childrenPublication",
+    "relatedPublications",
 ]
 CHUNK_SIZE = 250
 
@@ -76,7 +86,7 @@ def fetch_all(sleep_s: float = 0.25) -> tuple[pl.DataFrame, FoedbResult]:
 
     records = []
     for j in range(0, len(raw), len(RECORD_COLUMNS)):
-        records.append(dict(zip(RECORD_COLUMNS, raw[j : j + len(RECORD_COLUMNS)])))
+        records.append(dict(zip(RECORD_COLUMNS, raw[j : j + len(RECORD_COLUMNS)], strict=False)))
 
     df = pl.DataFrame(
         {
@@ -86,15 +96,19 @@ def fetch_all(sleep_s: float = 0.25) -> tuple[pl.DataFrame, FoedbResult]:
             "type": [r["type"] for r in records],
             "boardmember": [r["boardmember"] for r in records],
             "document_urls": [r["documentTypes"] for r in records],
-            "title": [((r["publicationProperties"] or {}).get("Title")) or "" for r in records],
+            "title": [
+                ((r["publicationProperties"] or {}).get("Title")) or "" for r in records
+            ],
             "subtitle": [
-                "; ".join((r["publicationProperties"] or {}).get("Subtitle") or []) for r in records
+                "; ".join((r["publicationProperties"] or {}).get("Subtitle") or [])
+                for r in records
             ],
         }
     ).with_columns(
-        (pl.col("pub_timestamp") * 1000).cast(pl.Datetime("ms")).dt.replace_time_zone(
-            "Europe/Berlin"
-        ).alias("published_at"),
+        (pl.col("pub_timestamp") * 1000)
+        .cast(pl.Datetime("ms"))
+        .dt.replace_time_zone("Europe/Berlin")
+        .alias("published_at"),
         pl.col("pub_timestamp").cast(pl.Int64),
     )
     df = df.sort("published_at", descending=True)

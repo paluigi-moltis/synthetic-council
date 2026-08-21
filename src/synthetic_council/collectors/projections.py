@@ -34,7 +34,9 @@ import polars as pl
 
 from synthetic_council.config import PROCESSED_DIR, RAW_DIR, USER_AGENT
 
-MPD_CSV = "https://data-api.ecb.europa.eu/service/data/MPD?format=csvdata&startPeriod=2000"
+MPD_CSV = (
+    "https://data-api.ecb.europa.eu/service/data/MPD?format=csvdata&startPeriod=2000"
+)
 
 # headline items (PD_ITEM codes discovered from data; see exploratory notes)
 HEADLINE_ITEMS = {
@@ -53,20 +55,20 @@ class ProjectionsResult:
 
 def collect() -> ProjectionsResult:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True) as c:
+    with httpx.Client(
+        headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True
+    ) as c:
         r = c.get(MPD_CSV)
         r.raise_for_status()
     df = pl.read_csv(io.BytesIO(r.content), infer_schema_length=0)
     df.write_parquet(RAW_DIR / "mpd_projections.parquet")
 
-    keep = (
-        df.select(
-            pl.col("REF_AREA").alias("ref_area"),
-            pl.col("PD_ITEM").alias("item"),
-            pl.col("PD_ORIGIN").alias("origin"),
-            pl.col("TIME_PERIOD").alias("vintage"),
-            pl.col("OBS_VALUE").cast(pl.Float64).alias("value"),
-        )
+    keep = df.select(
+        pl.col("REF_AREA").alias("ref_area"),
+        pl.col("PD_ITEM").alias("item"),
+        pl.col("PD_ORIGIN").alias("origin"),
+        pl.col("TIME_PERIOD").alias("vintage"),
+        pl.col("OBS_VALUE").cast(pl.Float64).alias("value"),
     )
     keep.write_parquet(PROCESSED_DIR / "staff_projections.parquet")
     return ProjectionsResult(
