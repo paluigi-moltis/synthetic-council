@@ -62,23 +62,36 @@ def http() -> httpx.Client:
     return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=120, follow_redirects=True)
 
 
-def wayback_snapshots(year_from: int = 2007, year_to: int = 2026) -> list[str]:
-    """Monthly-collapsed snapshot timestamps of the GC members page."""
+def wayback_snapshots(year_from: int = 1999, year_to: int = 2026) -> list[str]:
+    """Monthly-collapsed snapshot timestamps of the GC members page (both hosts)."""
+    import time
+
     stamps: list[str] = []
+    urls = list(GC_PAGE_CANDIDATES) + ["ecb.int/ecb/orga/decisions/govc/html/index.en.html"]
     with http() as c:
-        for url in GC_PAGE_CANDIDATES:
-            r = c.get(
-                WAYBACK_CDX,
-                params={
-                    "url": url, "output": "json", "from": str(year_from),
-                    "to": str(year_to), "collapse": "timestamp:6", "limit": "300",
-                },
-            )
+        for url in urls:
+            try:
+                r = c.get(
+                    WAYBACK_CDX,
+                    params={
+                        "url": url, "output": "json", "from": str(year_from),
+                        "to": str(year_to), "collapse": "timestamp:6", "limit": "400",
+                    },
+                )
+            except httpx.HTTPError:
+                continue
             if r.status_code == 200 and r.text.strip().startswith("["):
-                rows = r.json()
-                stamps = [row[1] for row in rows[1:]]
-                break
-    return sorted(set(stamps))
+                try:
+                    rows = r.json()
+                except ValueError:
+                    continue
+                stamps.extend(row[1] for row in rows[1:])
+            time.sleep(1.0)
+    # dedupe by YYYY-MM keeping the first snapshot of each month (any host)
+    by_month: dict[str, str] = {}
+    for s in sorted(set(stamps)):
+        by_month.setdefault(s[:6], s)
+    return sorted(by_month.values())
 
 
 def parse_members_page(html: str) -> list[tuple[str, str]]:
@@ -165,30 +178,32 @@ def build_memberships(snapshots: list[str], max_snaps: int | None = None) -> lis
 
     snaps = snapshots if max_snaps is None else snapshots[:: max(1, len(snapshots) // max_snaps)]
     observations: list[tuple[str, str, str, str | None, str]] = []  # date, person, role, iso, source
+    from synthetic_council.collectors.persons import canonicalise, person_id
+
     with http() as c:
         for ts in snaps:
             date = f"{ts[:4]}-{ts[4:6]}-{ts[6:8]}"
-            try:
-                r = c.get(
-                    f"http://web.archive.org/web/{ts}/http://www.ecb.europa.eu/"
-                    "ecb/orga/decisions/govc/html/index.en.html"
-                )
-                if r.status_code != 200:
-                    # try the second URL variant
-                    r = c.get(
-                        f"http://web.archive.org/web/{ts}/https://www.ecb.europa.eu/"
-                        "ecb/orga/decisions/govc/html/index.en.html"
-                    )
-                if r.status_code != 200:
+            page = None
+            for tmpl in (
+                f"http://web.archive.org/web/{ts}/http://www.ecb.europa.eu/ecb/orga/decisions/govc/html/index.en.html",
+                f"http://web.archive.org/web/{ts}/https://www.ecb.europa.eu/ecb/orga/decisions/govc/html/index.en.html",
+                f"http://web.archive.org/web/{ts}/http://www.ecb.int/ecb/orga/decisions/govc/html/index.en.html",
+            ):
+                try:
+                    r = c.get(tmpl)
+                except httpx.HTTPError:
                     continue
-                entries = parse_members_page(r.text)
-                if not entries:
-                    continue
-                for name, role_desc in entries:
-                    role, iso = normalise_role(name, role_desc)
-                    observations.append((date, name, role, iso, f"wayback:{ts}"))
-            except httpx.HTTPError:
+                if r.status_code == 200 and r.text:
+                    page = r.text
+                    break
+            if not page:
                 continue
+            entries = parse_members_page(page)
+            if not entries:
+                continue
+            for name, role_desc in entries:
+                role, iso = normalise_role(name, role_desc)
+                observations.append((date, canonicalise(name), role, iso, f"wayback:{ts}"))
     # merge observations into tenures
     tenures: dict[tuple[str, str], dict] = {}
     for date, person, role, iso, source in sorted(observations):

@@ -110,7 +110,11 @@ def last_speech_before_meetings(
         .select("date", "speaker", "title", "subtitle", "contents")
         .sort("date")
     )
-    decisions = meetings.filter(pl.col("is_decision_day")).select("date").unique()
+    decisions = (
+        meetings.filter(pl.col("is_decision_day"))
+        .select(pl.col("announcement_date").alias("date")) if "announcement_date" in meetings.columns
+        else meetings.filter(pl.col("is_decision_day")).select("date")
+    ).unique()
     out = sp.join_where(
         decisions,
         pl.col("date") < pl.col("date_right"),
