@@ -31,13 +31,13 @@ def test_announcement_date_from_url_slug():
     timestamps (22:00/23:00 CET the evening before)."""
     from synthetic_council.collectors.decisions import _slug_date
 
-    assert _slug_date("https://www.ecb.europa.eu/press/pr/date/2008/html/pr081008.en.html") is not None
-    assert str(_slug_date("https://www.ecb.europa.eu/press/pr/date/2008/html/pr081008.en.html")) == "2008-10-08"
+    url = "https://www.ecb.europa.eu/press/pr/date/2008/html/pr081008.en.html"
+    assert str(_slug_date(url)) == "2008-10-08"
     assert str(_slug_date(".../pr150122_1.en.html")) == "2015-01-22"
     # pre-2000 releases: yy > 90 -> 19yy
     assert str(_slug_date(".../pr990408.en.html")) == "1999-04-08"
-    assert _slug_date("https://www.ecb.europa.eu/press/pr/date/2023/html/ecb.mp231214~9846e62f62.en.html") is None
-
+    u2 = "https://www.ecb.europa.eu/press/pr/date/2023/html/ecb.mp231214~9846e62f62.en.html"
+    assert _slug_date(u2) is None
 
 def test_vintage_growth_asof_picks_newest_period():
     """Regression: as-of must take the newest (revdate, period), not just the
