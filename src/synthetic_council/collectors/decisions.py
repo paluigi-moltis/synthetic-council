@@ -20,7 +20,8 @@ Cross-validation performed at collect time:
 
 from __future__ import annotations
 
-from datetime import timedelta
+import re
+from datetime import date, timedelta
 
 import polars as pl
 
@@ -29,6 +30,29 @@ from synthetic_council.collectors.rates import fetch_key_rates
 from synthetic_council.config import PROCESSED_DIR
 
 MAX_EFFECTIVE_LAG_DAYS = 11
+
+
+def _slug_date(url: str) -> date | None:
+    """True publication date from a press-release URL slug, else None.
+
+    Pre-2015 foedb pub_timestamps are batch times logged the evening BEFORE
+    publication (22:00/23:00 CET), so they are off by one day. The URL slug
+    carries the true date: /press/pr/date/2008/html/pr081008.en.html ->
+    2008-10-08 (the coordinated cut). Modern foedb URLs (ecb.mpYYMMDD~hash)
+    match their timestamps and return None here. Verified: 2008-10-08,
+    2008-11-06, 2011-04-07, 2011-11-03, 2014-06-05, 2015-01-22, 2019-09-12.
+    """
+    m = re.search(r"/pr(\d{6})(?:_\d+)?\.en\.html", url or "")
+    if not m:
+        return None
+    yy, mm, dd = int(m.group(1)[:2]), int(m.group(1)[2:4]), int(m.group(1)[4:])
+    year = 1900 + yy if yy > 90 else 2000 + yy
+    return date(year, mm, dd)
+
+
+def true_date(url: str, published_at) -> date:
+    """Announcement date: URL slug when available, else timestamp date."""
+    return _slug_date(url) or published_at.date()
 
 
 def build() -> pl.DataFrame:
@@ -52,11 +76,13 @@ def build() -> pl.DataFrame:
     url_col = [en_url(u) for u in mopo["document_urls"].to_list()]
     mopo = mopo.with_columns(
         pl.Series("press_release_url", url_col, dtype=pl.String),
-        pl.col("published_at")
-        .dt.convert_time_zone("UTC")
-        .dt.date()
-        .alias("announcement_date"),
     )
+
+    ann = [
+        true_date(u, p)
+        for u, p in zip(mopo["press_release_url"], mopo["published_at"], strict=False)
+    ]
+    mopo = mopo.with_columns(pl.Series("announcement_date", ann, dtype=pl.Date))
 
     # rate-change effective dates
     chg = daily.with_columns(

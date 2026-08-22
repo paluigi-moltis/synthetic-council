@@ -24,6 +24,7 @@ import polars as pl
 
 from synthetic_council.config import (
     ECB_SPEECHES_CSV_PAGE,
+    PROCESSED_DIR,
     RAW_DIR,
     USER_AGENT,
 )
@@ -142,6 +143,13 @@ def collect() -> SpeechesResult:
     df = parse_pipe_csv(raw)
     (RAW_DIR / "speeches").mkdir(parents=True, exist_ok=True)
     df.write_parquet(SPEECHES_RAW_PATH)
+    # last-speech join needs the decision calendar; write it if available
+    dec_path = PROCESSED_DIR / "gc_decisions.parquet"
+    if dec_path.exists():
+        dec = pl.read_parquet(dec_path).with_columns(pl.lit(True).alias("is_decision_day"))
+        last = last_speech_before_meetings(df, dec)
+        PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
+        last.write_parquet(PROCESSED_DIR / "last_speech_before_meeting.parquet")
     return SpeechesResult(
         n_speeches=df.height,
         n_speakers=df.select(pl.col("speakers").n_unique()).item(),

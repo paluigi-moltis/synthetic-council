@@ -260,26 +260,21 @@ def build_memberships(
                     (date, canonicalise(name), role, iso, f"wayback:{ts}")
                 )
     # merge observations into tenures (drop junk person names at source)
-    _junk = (  # noqa: E731
-        lambda n: not n
-        or len(n) < 5
-        or len(n) > 60
-        or any(ch.isdigit() for ch in n)
-        or any(
-            s in n
-            for s in (
-                "<",
-                ">",
-                "{",
-                "}",
-                "+",
-                "innerHTML",
-                "Council",
-                "stability",
-                "Insights",
-            )
-        )
+    _junk_words = (
+        "<", ">", "{", "}", "+", "innerHTML", "Council", "stability", "Insights",
+        "Statistics", "euro", "Research", "cookie", "page?", "happy", "Explore",
+        "Supervision", "Payment", "Market", "Press", "Careers", "Procurement",
+        "Sir", "Madam", "Governance", "Calendar",
     )
+
+    def _junk(n: str) -> bool:
+        return (
+            not n
+            or len(n) < 5
+            or len(n) > 60
+            or any(ch.isdigit() for ch in n)
+            or any(s in n for s in _junk_words)
+        )
     tenures: dict[tuple[str, str], dict] = {}
     for date, person, role, iso, source in sorted(observations):
         if _junk(person):
@@ -302,4 +297,18 @@ def build_memberships(
     for t in tenures.values():
         end = datetime.strptime(t["end"], "%Y-%m-%d") + timedelta(days=45)
         rows.append({**t, "end": end.strftime("%Y-%m-%d")})
+    # clamp overlaps: a person holding role B starting earlier than role A's end
+    # means A ended at B's start (handover); trim A to the day before B starts.
+    by_person: dict[str, list[dict]] = {}
+    for r in rows:
+        by_person.setdefault(r["person"], []).append(r)
+    for _person, rs in by_person.items():
+        rs.sort(key=lambda r: r["start"])
+        for a, b in zip(rs, rs[1:], strict=False):
+            if b["start"] <= a["end"]:
+                new_end = (
+                    datetime.strptime(b["start"], "%Y-%m-%d") - timedelta(days=1)
+                ).strftime("%Y-%m-%d")
+                if new_end >= a["start"]:
+                    a["end"] = new_end
     return [MembershipRow(**r) for r in rows]

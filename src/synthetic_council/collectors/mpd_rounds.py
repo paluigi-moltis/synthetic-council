@@ -26,16 +26,19 @@ ROUND_MONTH = {"W": 3, "G": 6, "S": 9, "A": 12}
 
 ITEM_LABELS = {
     "HIC": "HICP inflation (%)",
-    "PCR": "Real GDP growth (%)",
-    "PCU": "Real GDP growth, alternative measure (%)",
-    "DDR": "Unemployment rate (%)",
-    "HEF": "HICP energy inflation (%)",
+    "YER": "Real GDP growth (%)",
+    "URX": "Unemployment rate (%)",
+    "DDR": "Domestic demand growth (%)",
+    "PCR": "Private consumption growth (%)",
+    "HEF": "HICP ex food & energy (%)",
     "HEG": "HICP food inflation (%)",
-    "HEX": "HICP ex energy & food (%)",
     "LTR": "Long-term interest rate (%)",
 }
 
-HEADLINE = ["HIC", "PCR", "DDR"]
+# Official CL_PD_ITEM meanings (ECB SDMX dataflow/ECB/MPD structure):
+#   HIC = HICP overall index; YER = real GDP; URX = unemployment rate;
+#   PCR = private consumption; DDR = domestic demand excl. inventory changes.
+HEADLINE = ["HIC", "YER", "URX"]
 
 
 def round_date(seas: str) -> str | None:

@@ -247,6 +247,34 @@ def fetch_rtd_hicp_with_history() -> pl.DataFrame:
     )
 
 
+def fetch_rtd_gdp_with_history() -> pl.DataFrame:
+    """EA real GDP (chain-linked volumes) with true vintages.
+
+    Series RTD/Q.S0.S.G_GDPM_TO_C.E (quarterly, seasonally adjusted, euro area
+    changing composition). Same includeHistory semantics as HICP: one row per
+    revision, VALID_FROM = release date. Verified: vintages 2001-01-03 → now,
+    reference quarters 1995-Q1 → 2026-Q1 (2026-08-21). Supersedes PEEI
+    ei_na_q_vtg (2014-10 →) for the pre-2014 gap; both kept for cross-checking.
+    """
+    with _client() as c:
+        r = c.get(
+            f"{ECB_API}/RTD/Q.S0.S.G_GDPM_TO_C.E",
+            params={"format": "csvdata", "startPeriod": "1995-Q1",
+                    "includeHistory": "true"},
+        )
+        r.raise_for_status()
+    df = pl.read_csv(io.BytesIO(r.content), infer_schema=False)
+    return (
+        df.filter(pl.col("ACTION") != "Delete")
+        .select(
+            pl.col("TIME_PERIOD").alias("period"),
+            pl.col("OBS_VALUE").cast(pl.Float64).alias("gdp_ea"),
+            pl.col("VALID_FROM").str.slice(0, 10).str.to_date().alias("revdate"),
+        )
+        .filter(pl.col("revdate").is_not_null() & pl.col("gdp_ea").is_not_null())
+    )
+
+
 # ---------------------------------------------------------------------------
 # DG-ECFIN sentiment
 # ---------------------------------------------------------------------------

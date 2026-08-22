@@ -52,13 +52,25 @@ Every dataset documents its endpoints, discovery path and verification in
 
 | dataset | rows | span | source |
 |---|---|---|---|
-| `gc_decisions.parquet` | 317 meetings | 1999-03 → 2026-07 | ECB foedb + SDMX FM |
-| `gc_memberships_wayback.parquet` | ~110 tenures | 2004 → 2026 | Wayback GC pages |
+| `gc_decisions.parquet` | 317 meetings | 1999-03 → 2026-07 | ECB foedb (URL-slug dates) + SDMX FM |
+| `gc_memberships_wayback.parquet` | 94 tenures / 88 persons | 2004 → 2026 | Wayback GC pages (3 layouts) |
 | `speeches.parquet` | 3,052 | 1997 → 2026-07 | ECB speeches CSV |
 | `last_speech_before_meeting.parquet` | 1,888 meeting×speaker links | 1999 → 2026 | idem |
-| `macro_asof_panel.parquet` | 13,678 | 1999 → 2026 | RTD + PEEI + CISS + DG-ECFIN |
+| `macro_asof_panel.parquet` | ~13.9k rows | 1999 → 2026 (HICP/GDP vintages 2001+) | ECB RTD + PEEI + CISS + DG-ECFIN |
 | `staff_projections.parquet` | 154,686 | 2000 → 2026 | ECB MPD |
-| `memos/` | per meeting×member | — | assembled |
+| `memos/` | 88 briefings (sample) | — | assembled |
+
+## Reproducing everything
+
+```bash
+uv sync
+uv run python scripts/collect_all.py            # full pipeline (~30-40 min, no keys)
+uv run pytest                                   # 12 tests
+uv run ruff check src/ scripts/ tests/
+```
+
+The pipeline is deterministic given upstream sources; each collector prints its
+own verification stats (meeting counts, vintage spans, tenure counts).
 
 ## Status & next steps
 

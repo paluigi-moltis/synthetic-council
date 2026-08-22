@@ -5,9 +5,9 @@ from __future__ import annotations
 import polars as pl
 
 from synthetic_council.collectors.macro import (
-    download_peei,
     fetch_ciss,
     fetch_ea_unemployment,
+    fetch_rtd_gdp_with_history,
     fetch_rtd_hicp_with_history,
     fetch_sentiment,
 )
@@ -105,47 +105,29 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
     )
     out.append(ea_hicp)
 
-    # --- EA GDP growth (true vintages, PEEI) ---
-    gdp = (
-        download_peei("ei_na_q_vtg")
-        .filter((pl.col("geo") == "EA") & (pl.col("s_adj") == "SCA"))
-        .with_columns(pl.col("revdate").str.to_date("%Y-%m-%d"))
-        .sort(["period", "revdate"])
-    )
-    # growth: yoy % from levels within each vintage validity interval
+    # --- EA GDP growth (true vintages, ECB RTD G_GDPM_TO_C; 2001-01 ->) ---
+    gdp = fetch_rtd_gdp_with_history().sort(["period", "revdate"])
     gdp = gdp.with_columns(
         pl.col("revdate").shift(-1).over("period").alias("next_revdate")
     )
     gdp = gdp.with_columns(
-        pl.col("period")
-        .str.replace("Q", "-Q")
-        .str.split("-")
-        .list.first()
-        .cast(pl.Int32)
-        .alias("y"),
-        pl.col("period").str.slice(-1).cast(pl.Int32).alias("q"),
-    ).with_columns((pl.col("y") * 4 + pl.col("q")).alias("qmi"))
-    lag_g = gdp.select("qmi", "revdate", "next_revdate", pl.col("value").alias("prev"))
-    gdp = (
-        gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev"))
-        .join(lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left")
-        .filter(
-            (pl.col("revdate_right") <= pl.col("revdate"))
-            & (
-                pl.col("next_revdate_right").is_null()
-                | (pl.col("revdate") < pl.col("next_revdate_right"))
-            )
+        pl.col("period").str.slice(0, 4).cast(pl.Int32).alias("_y"),
+        pl.col("period").str.slice(-1).cast(pl.Int32).alias("_q"),
+    ).with_columns((pl.col("_y") * 4 + pl.col("_q")).alias("qmi"))
+    lag_g = gdp.select("qmi", "revdate", "next_revdate", pl.col("gdp_ea").alias("prev"))
+    gdp = gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev")).join(
+        lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left"
+    ).filter(
+        (pl.col("revdate_right") <= pl.col("revdate"))
+        & (
+            pl.col("next_revdate_right").is_null()
+            | (pl.col("revdate") < pl.col("next_revdate_right"))
         )
-        .with_columns(((pl.col("value") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
-    )
+    ).with_columns(((pl.col("gdp_ea") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
     ea_gdp = _asof_from_vintages(
-        gdp.filter(pl.col("gdp_yoy").is_not_null()).select(
-            "revdate", "period", "gdp_yoy"
-        ),
-        dates,
-        "gdp_yoy",
-        "gdp_yoy",
-        "EA",
+        gdp.filter(pl.col("gdp_yoy").is_not_null())
+        .select("revdate", "period", "gdp_yoy"),
+        dates, "gdp_yoy", "gdp_yoy", "EA",
     )
     out.append(ea_gdp)
 

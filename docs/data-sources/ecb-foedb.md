@@ -87,6 +87,23 @@ Records are **sorted by `pub_timestamp` descending** (newest = chunk 0, id 0).
   - 2015–2025: 8/yr (six-weekly cycle)
   - 2026: 5 through July
 
+## ⚠️ Off-by-one publication timestamps (pre-2015)
+
+`pub_timestamp` for pre-2015 press releases is a **batch time logged at
+22:00/23:00 CET the evening *before* actual publication** (e.g. the 8 October
+2008 coordinated cut carries 2008-10-07 22:00 CEST). Announcement dates must
+therefore be taken from the **press-release URL slug**, not the timestamp:
+
+```
+/press/pr/date/2008/html/pr081008.en.html  →  2008-10-08
+```
+
+Verified against ECB's documented history: 2008-10-08 (coordinated cut),
+2008-11-06, 2011-04-07 (first hike), 2011-11-03, 2014-06-05 (negative DFR),
+2015-01-22 (QE), 2019-09-12, 2022-07-21, 2023-06-15 all correct via slug.
+Modern foedb URLs (`ecb.mpYYMMDD~hash.en.html`) match their timestamps and are
+unaffected. Implementation: `collectors/decisions.py::true_date`.
+
 ## Politeness / stability
 
 - ~81 requests of ~1 MB total fetch the whole database; the collector sleeps
