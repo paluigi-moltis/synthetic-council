@@ -154,9 +154,20 @@ def build_memos(
     n = 0
     for m in meets.iter_rows(named=True):
         d = m["announcement_date"]
+        # active tenures, with a +45d grace past 'end' (Wayback sighting gaps).
+        # A person can qualify twice near handovers (old role in grace, new role
+        # started) — keep ONE memo per person: the tenure already started at d,
+        # else the latest one.
         attendees = memberships.filter(
             (pl.col("start").str.to_date() <= d)
             & (pl.col("end").str.to_date() + pl.duration(days=45) >= d)
+        ).with_columns(
+            (
+                (pl.col("end").str.to_date() >= d).alias("_active")
+                & (pl.col("start").str.to_date() <= d)
+            ).alias("_started")
+        ).sort(["person", "_started", "start"], descending=[False, True, True]).unique(
+            subset=["person"], keep="first"
         )
         ea_rows = macro.filter(
             (pl.col("announcement_date") == d) & (pl.col("geo") == "EA")
