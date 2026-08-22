@@ -20,11 +20,8 @@ from pathlib import Path
 import jinja2
 import polars as pl
 
-from synthetic_council.collectors.mpd_rounds import (
-    HEADLINE,
-    ITEM_LABELS,
-    rounds_frame,
-)
+from synthetic_council.collectors import mpd_items
+from synthetic_council.collectors.mpd_rounds import rounds_frame
 from synthetic_council.config import PROCESSED_DIR, RAW_DIR
 
 COUNTRY_NAMES = {
@@ -67,10 +64,18 @@ MEMO_TEMPLATE = """# Briefing memo — {{ member.person }}
 
 ## Latest staff projections available at the meeting
 
-{% for proj in projections %}- **{{ proj.round }}**
-  ({{ proj.item }}):
-  {% for t in proj.targets %}{{ t.year }}: {{ t.value }} {% endfor %}
+Projection round: **{{ proj_round }}** (ECB/Eurosystem staff, euro area;
+all available items; annual figures).
+
+{% for group in projections_by_category %}
+### {{ group.category }}
+
+{{ group.header }}
+{{ group.sep }}
+{% for p in group.rows %}{{ p.line }}
 {% endfor %}
+{% endfor %}
+
 
 {% if country_rows %}
 ## {{ country_name }} — country situation
@@ -183,6 +188,7 @@ def build_memos(
         # projections: latest round before meeting, EA, headline items
         avail = _proj_round_available(projections, d)
         proj_out = []
+        last_round = None
         if avail.height:
             last_round = avail["round_date"].max()
             round_year = int(str(last_round)[:4])
@@ -190,27 +196,46 @@ def build_memos(
                 (pl.col("round_date") == last_round)
                 & (pl.col("REF_AREA") == "U2")
                 & (pl.col("FREQ") == "A")
-                & (pl.col("PD_ITEM").is_in(HEADLINE))
                 & pl.col("TIME_PERIOD").str.contains(r"^\d{4}$")
             ).filter(
                 # forward-looking targets only (MPD includes interpolated backdata)
-                pl.col("TIME_PERIOD").cast(pl.Int32)
-                >= round_year
+                pl.col("TIME_PERIOD").cast(pl.Int32) >= round_year
             )
-            for item in HEADLINE:
+            for item in mpd_items.category_order():
                 rows = ea_proj.filter(pl.col("PD_ITEM") == item).sort("TIME_PERIOD")
                 if not rows.height:
                     continue
+                short, unit, cat = mpd_items.ITEMS[item]
                 proj_out.append(
                     {
-                        "round": last_round,
-                        "item": ITEM_LABELS.get(item, item),
-                        "targets": [
-                            {"year": r["TIME_PERIOD"], "value": r["OBS_VALUE"]}
+                        "category": cat,
+                        "item": short,
+                        "unit": unit,
+                        "by_year": {
+                            r["TIME_PERIOD"]: _fmt(r["OBS_VALUE"])
                             for r in rows.iter_rows(named=True)
-                        ],
+                        },
                     }
                 )
+        # group by category in display order; union of target years;
+        # pre-render one markdown table row per item
+        proj_years: list[str] = sorted(
+            {y for p in proj_out for y in p["by_year"]}
+        )
+        for p in proj_out:
+            cells = " | ".join(p["by_year"].get(y, "—") for y in proj_years)
+            p["line"] = f'| {p["item"]} | {p["unit"]} | {cells} |'
+        ycols = " | ".join(proj_years)
+        projections_by_category = [
+            {
+                "category": cat,
+                "header": f"| Item | Unit | {ycols} |",
+                "sep": "|---|---|" + "---|" * len(proj_years),
+                "rows": [p for p in proj_out if p["category"] == cat],
+            }
+            for cat in mpd_items.CATEGORY_ORDER
+            if any(p["category"] == cat for p in proj_out)
+        ]
         for a in attendees.iter_rows(named=True):
             country_rows = []
             if a["country"]:
@@ -251,7 +276,9 @@ def build_memos(
                     "mlf": m["mlf"] or 0,
                 },
                 ea_rows=ea_out,
-                projections=proj_out,
+                projections_by_category=projections_by_category,
+                proj_years=proj_years,
+                proj_round=str(last_round) if proj_out else "",
                 country_rows=country_rows,
                 last_speech=last_speech_ctx,
             )
