@@ -36,6 +36,6 @@ def test_official_meanings():
 
 
 def test_contrib_and_level_sets():
-    assert mpd_items.CONTRIB_ITEMS == {"SCR", "NER"}
+    assert {"SCR", "NER"} == mpd_items.CONTRIB_ITEMS
     assert "LTN" in mpd_items.LEVEL_ITEMS
     assert "HIC" not in mpd_items.LEVEL_ITEMS
