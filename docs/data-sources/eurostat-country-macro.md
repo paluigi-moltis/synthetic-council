@@ -12,15 +12,18 @@ Module: `src/synthetic_council/collectors/country_macro.py`
 | indicator | source | series | span |
 |---|---|---|---|
 | hicp_yoy | Eurostat `prc_hicp_minr` | `M.RCH_A.TOTAL.{EA+20}` | 1996-01 → |
-| hicp_core | Eurostat `prc_hicp_minr` | `M.RCH_A.TOT_X_NRG_FOOD_NP.{EA+20}` | 1996-01 → |
+| hicp_core | Eurostat `prc_hicp_minr` | `M.RCH_A.TOT_X_NRG_FOOD.{EA+20}` | 1996-01 → |
 | gdp_yoy | Eurostat `namq_10_gdp` | `Q.CLV_PCH_SM.SCA.B1GQ.{EA+20}` | 1975-Q1 → |
 | unemp (2021-01 →) | Eurostat `ei_lm_m_vtg` | **true vintages** (revdate) | 1983-01 → |
 | unemp (pre-2021) | Eurostat `une_rt_m` | latest-revised `PC_ACT SA T TOTAL` | 1983-01 → |
 
 - `EA` = euro area **changing composition** (matches ECB `S0`/`U2`
   convention; EA19/EA20 are fixed rosters and are never used).
-- Core definition: HICP all-items **excluding energy and unprocessed food**
-  (`TOT_X_NRG_FOOD_NP`) — the ECB's preferred core measure.
+- Core definition (ECB): HICP all-items **excluding energy, food, alcohol
+  and tobacco** (`TOT_X_NRG_FOOD`). This is the ECB's preferred core measure
+  used in staff projections and the Monthly Bulletin. Note the distinction
+  from the narrower Eurostat aggregate `TOT_X_NRG_FOOD_NP` (excluding only
+  energy and unprocessed/fresh food) — deliberately NOT used here.
 - **Dataset history**: `prc_hicp_manr` (the older monthly-rates dataset) was
   **discontinued with 2025-12 data**; `prc_hicp_minr` (HICP monthly *index*
   new release, `coicop18` classification) is the successor and carries
@@ -41,7 +44,7 @@ Module: `src/synthetic_council/collectors/country_macro.py`
    than one dimension fixed; use bulk + client-side filter).
 3. `prc_hicp_manr` was **discontinued** (data ends 2025-12; announced
    2026-01). Successor `prc_hicp_minr` is current (2026-07 live) and carries
-   both headline (`TOTAL`) and core (`TOT_X_NRG_FOOD_NP`) y/y via unit
+   both headline (`TOTAL`) and core (`TOT_X_NRG_FOOD`) y/y via unit
    `RCH_A`. The PEEI flash release `ei_cphi_m` is an alternative but starts
    later and is flash-oriented.
 4. Geo lists in the key path use `+`: `...TOTAL.EA+AT+BE+...` (one request
@@ -95,5 +98,5 @@ HICP 2026-06 = 2.8, GDP 2026-Q1 = 0.33 (RTD), unemp 2026-05 = 6.3.
   matches current Eurostat data.
 - 2011-04-07: FR hicp 2.2 (2011-02), DE core 0.9 — matches April 2011
   Euro-indicator releases.
-- `prc_hicp_minr` DE 2026-07 core (`TOT_X_NRG_FOOD_NP`) = 2.6 — matches the
+- `prc_hicp_minr` DE 2026-07 core (`TOT_X_NRG_FOOD`) = 2.6 — matches the
   Eurostat release.

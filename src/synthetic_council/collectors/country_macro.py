@@ -5,7 +5,7 @@ format 406s and query-param filtering is silently ignored for TSV bulk — see
 docs/data-sources/eurostat-country-macro.md):
 
 - Headline + core HICP (monthly y/y): Eurostat prc_hicp_manr
-  CP00 (all-items) + TOT_X_NRG_FOOD (core: ex energy & unprocessed food),
+  TOTAL (all-items) + TOT_X_NRG_FOOD (core: ex energy, food, alcohol &
   geo = EA (changing composition) + 20 EA countries, 1997-01 ->.
 - Real GDP growth (quarterly y/y): Eurostat namq_10_gdp CLV_PCH_SM SCA B1GQ
   (chain-linked volumes, percentage change vs same quarter of previous year).
@@ -163,15 +163,17 @@ def fetch_country_hicp(client: httpx.Client) -> pl.DataFrame:
     """Country + EA headline and core HICP y/y (prc_hicp_minr).
 
     prc_hicp_minr M.RCH_A (annual rate of change): TOTAL = all-items headline;
-    TOT_X_NRG_FOOD_NP = core (ex energy & unprocessed food, ECB definition).
+    TOT_X_NRG_FOOD = core per the ECB definition (excluding energy, food,
+    alcohol & tobacco — not the narrower Eurostat TOT_X_NRG_FOOD_NP which
+    only excludes energy and unprocessed food).
     prc_hicp_minr replaced the discontinued prc_hicp_manr from 2026-01
     (prc_hicp_manr data ends 2025-12).
     """
     geos = "+".join(EA_GEOS)
     df = _get_tsv(
-        client, f"prc_hicp_minr/M.RCH_A.TOTAL+TOT_X_NRG_FOOD_NP.{geos}"
+        client, f"prc_hicp_minr/M.RCH_A.TOTAL+TOT_X_NRG_FOOD.{geos}"
     )
-    ind_map = {"TOTAL": "hicp_yoy", "TOT_X_NRG_FOOD_NP": "hicp_core"}
+    ind_map = {"TOTAL": "hicp_yoy", "TOT_X_NRG_FOOD": "hicp_core"}
     return (
         df.with_columns(
             pl.col("coicop18").replace(ind_map, default=None).alias("indicator")
