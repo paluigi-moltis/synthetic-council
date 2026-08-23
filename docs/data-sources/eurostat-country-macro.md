@@ -11,8 +11,8 @@ Module: `src/synthetic_council/collectors/country_macro.py`
 
 | indicator | source | series | span |
 |---|---|---|---|
-| hicp_yoy | Eurostat `ei_cphi_m` | `M.RT12.TOTAL.{EA+20}` | 1996-01 → |
-| hicp_core | Eurostat `ei_cphi_m` | `M.RT12.CP-HI00XEFU.{EA+20}` | 1996-01 → |
+| hicp_yoy | Eurostat `prc_hicp_minr` | `M.RCH_A.TOTAL.{EA+20}` | 1996-01 → |
+| hicp_core | Eurostat `prc_hicp_minr` | `M.RCH_A.TOT_X_NRG_FOOD_NP.{EA+20}` | 1996-01 → |
 | gdp_yoy | Eurostat `namq_10_gdp` | `Q.CLV_PCH_SM.SCA.B1GQ.{EA+20}` | 1975-Q1 → |
 | unemp (2021-01 →) | Eurostat `ei_lm_m_vtg` | **true vintages** (revdate) | 1983-01 → |
 | unemp (pre-2021) | Eurostat `une_rt_m` | latest-revised `PC_ACT SA T TOTAL` | 1983-01 → |
@@ -20,7 +20,12 @@ Module: `src/synthetic_council/collectors/country_macro.py`
 - `EA` = euro area **changing composition** (matches ECB `S0`/`U2`
   convention; EA19/EA20 are fixed rosters and are never used).
 - Core definition: HICP all-items **excluding energy and unprocessed food**
-  (`CP-HI00XEFU`) — consistent with the ECB's preferred core measure.
+  (`TOT_X_NRG_FOOD_NP`) — the ECB's preferred core measure.
+- **Dataset history**: `prc_hicp_manr` (the older monthly-rates dataset) was
+  **discontinued with 2025-12 data**; `prc_hicp_minr` (HICP monthly *index*
+  new release, `coicop18` classification) is the successor and carries
+  `RCH_A` (annual rate of change) directly. Dimension is `coicop18`
+  (not `coicop`), and `TOTAL` (not `CP00`) is the all-items code.
 - GDP: chain-linked volumes, percentage change vs same quarter of previous
   year, seasonally adjusted.
 
@@ -34,10 +39,11 @@ Module: `src/synthetic_council/collectors/country_macro.py`
    the **key path** (`prc_hicp_manr/M.RCH_A.CP00.DE`) — except for datasets
    that reject key queries entirely (`une_rt_m` 400s on any key with more
    than one dimension fixed; use bulk + client-side filter).
-3. `prc_hicp_manr` (the canonical HICP monthly rates dataset) is served
-   **stale** through this API (ends 2025-12 as of 2026-08). The PEEI release
-   `ei_cphi_m` is current (2026-07 live) and carries both headline and core
-   y/y directly — we use it instead.
+3. `prc_hicp_manr` was **discontinued** (data ends 2025-12; announced
+   2026-01). Successor `prc_hicp_minr` is current (2026-07 live) and carries
+   both headline (`TOTAL`) and core (`TOT_X_NRG_FOOD_NP`) y/y via unit
+   `RCH_A`. The PEEI flash release `ei_cphi_m` is an alternative but starts
+   later and is flash-oriented.
 4. Geo lists in the key path use `+`: `...TOTAL.EA+AT+BE+...` (one request
    for all 21 geos).
 
@@ -71,6 +77,16 @@ The same m+2 timing applies to the EA unemployment series in
   the public API — `ei_na_q_vtg` covers EA/EU aggregates only).
 - EA aggregates use true RTD vintages (2001+; see `ecb-rtd-mpd.md`).
 
+## EA splice (RTD load lag)
+
+The EA rows in `macro_asof_panel` come from true ECB RTD vintages, but RTD
+loads with a lag (as of 2026-08: last vintage 2026-06-10, so June 2026 HICP —
+published 2026-07-17 — was absent). For meetings where the Eurostat release
+is strictly newer than the newest RTD vintage, the Eurostat value is spliced
+in (for a just-published period the Eurostat value IS the first vintage); on
+equal `ref_period` the RTD/LFSI row wins. Verified: 2026-07-23 memo shows
+HICP 2026-06 = 2.8, GDP 2026-Q1 = 0.33 (RTD), unemp 2026-05 = 6.3.
+
 ## Verification anchors
 
 - 2022-07-21: DE hicp 8.3, core 4.2, GDP 2022-Q1 3.7, unemp 2.8 (2022-05,
@@ -79,3 +95,5 @@ The same m+2 timing applies to the EA unemployment series in
   matches current Eurostat data.
 - 2011-04-07: FR hicp 2.2 (2011-02), DE core 0.9 — matches April 2011
   Euro-indicator releases.
+- `prc_hicp_minr` DE 2026-07 core (`TOT_X_NRG_FOOD_NP`) = 2.6 — matches the
+  Eurostat release.

@@ -160,20 +160,21 @@ def _asof_latest_published(
 
 
 def fetch_country_hicp(client: httpx.Client) -> pl.DataFrame:
-    """Country + EA headline and core HICP y/y (ei_cphi_m, PEEI release).
+    """Country + EA headline and core HICP y/y (prc_hicp_minr).
 
-    ei_cphi_m M.RT12: growth rate t/t-12. TOTAL = all-items headline;
-    CP-HI00XEFU = core (ex energy & unprocessed food). Current (2026-07 data
-    live), unlike prc_hicp_manr which the API serves stale (ends 2025-12).
+    prc_hicp_minr M.RCH_A (annual rate of change): TOTAL = all-items headline;
+    TOT_X_NRG_FOOD_NP = core (ex energy & unprocessed food, ECB definition).
+    prc_hicp_minr replaced the discontinued prc_hicp_manr from 2026-01
+    (prc_hicp_manr data ends 2025-12).
     """
     geos = "+".join(EA_GEOS)
     df = _get_tsv(
-        client, f"ei_cphi_m/M.RT12.TOTAL+CP-HI00XEFU.{geos}"
+        client, f"prc_hicp_minr/M.RCH_A.TOTAL+TOT_X_NRG_FOOD_NP.{geos}"
     )
-    ind_map = {"TOTAL": "hicp_yoy", "CP-HI00XEFU": "hicp_core"}
+    ind_map = {"TOTAL": "hicp_yoy", "TOT_X_NRG_FOOD_NP": "hicp_core"}
     return (
         df.with_columns(
-            pl.col("indic").replace(ind_map, default=None).alias("indicator")
+            pl.col("coicop18").replace(ind_map, default=None).alias("indicator")
         )
         .filter(pl.col("indicator").is_not_null())
         .select("geo", "period", "value", "indicator")

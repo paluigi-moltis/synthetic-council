@@ -240,10 +240,39 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
 
     # --- Country-level indicators (governor memos): hicp_yoy, hicp_core,
     # gdp_yoy (Eurostat), unemp (true vintages 2021+, else latest-revised) ---
+    # EA aggregates: the panel's EA rows come from true RTD vintages (HICP,
+    # GDP) / LFSI (unemp). RTD loads with a lag, so for the most recent
+    # meetings the Eurostat release may be NEWER than the newest RTD vintage;
+    # splice those in (for a just-published period the Eurostat value IS the
+    # first vintage). On equal ref_period the RTD/LFSI row wins.
     from synthetic_council.collectors import country_macro
 
+    full_country = country_macro.build_country_macro(meetings)
+    ea_new = (
+        full_country.filter(pl.col("geo") == "EA")
+        .join(
+            panel.filter(pl.col("geo") == "EA").select(
+                "announcement_date",
+                "indicator",
+                pl.col("ref_period").alias("rt_ref"),
+            ),
+            on=["announcement_date", "indicator"],
+            how="left",
+        )
+        .filter(
+            pl.col("rt_ref").is_null() | (pl.col("ref_period") > pl.col("rt_ref"))
+        )
+        .drop("rt_ref")
+    )
     panel = pl.concat(
-        [panel, country_macro.build_country_macro(meetings)]
+        [panel, ea_new, full_country.filter(pl.col("geo") != "EA")]
+    )
+    # splice replaces the older RTD/LFSI row: keep latest ref_period per
+    # (date, geo, indicator) — duplicates only arise when the Eurostat splice
+    # is strictly newer, same string format per indicator
+    panel = (
+        panel.sort(["announcement_date", "geo", "indicator", "ref_period"])
+        .unique(subset=["announcement_date", "geo", "indicator"], keep="last")
     )
     return panel.sort("announcement_date", "geo", "indicator")
 
