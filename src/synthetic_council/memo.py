@@ -109,6 +109,7 @@ class MemoResult:
 def _indicator_label(ind: str) -> str:
     return {
         "hicp_yoy": "HICP inflation (y/y %)",
+        "hicp_core": "HICP core — ex energy & unprocessed food (y/y %)",
         "gdp_yoy": "Real GDP growth (y/y %)",
         "unemp": "Unemployment rate (%)",
         "ciss": "CISS (systemic stress)",
@@ -301,6 +302,5 @@ if __name__ == "__main__":
         projections,
         last_speech,
         Path("data/processed/memos"),
-        meetings_limit=3,
     )
     print(res)

@@ -264,7 +264,7 @@ def build_memberships(
         "<", ">", "{", "}", "+", "innerHTML", "Council", "stability", "Insights",
         "Statistics", "euro", "Research", "cookie", "page?", "happy", "Explore",
         "Supervision", "Payment", "Market", "Press", "Careers", "Procurement",
-        "Sir", "Madam", "Governance", "Calendar",
+        "Sir", "Madam", "Governance", "Calendar", "Publications",
     )
 
     def _junk(n: str) -> bool:

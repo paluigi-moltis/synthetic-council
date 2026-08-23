@@ -164,7 +164,7 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
                 pl.col("announcement_date").dt.year() * 12
                 + pl.col("announcement_date").dt.month()
             )
-            - 1
+            - 2
         ).alias("pm_avail")
     ).sort("pm_avail")
     ea_unemp = dates_m.join_asof(
@@ -237,6 +237,14 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
             out.append(asof)
 
     panel = pl.concat(out)
+
+    # --- Country-level indicators (governor memos): hicp_yoy, hicp_core,
+    # gdp_yoy (Eurostat), unemp (true vintages 2021+, else latest-revised) ---
+    from synthetic_council.collectors import country_macro
+
+    panel = pl.concat(
+        [panel, country_macro.build_country_macro(meetings)]
+    )
     return panel.sort("announcement_date", "geo", "indicator")
 
 

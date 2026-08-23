@@ -57,16 +57,17 @@ def main() -> None:
     print(f"meetings={dec.height} "
           f"span={dec['announcement_date'].min()}..{dec['announcement_date'].max()}")
 
-    step("5/6 macro as-of panel (RTD/PEEI vintages, CISS, sentiment)")
+    step("5/7 macro as-of panel (RTD/PEEI vintages, CISS, sentiment)")
     from synthetic_council.collectors import macro_panel
 
     panel = macro_panel.collect(dec)
     print(f"panel rows={panel.height}")
 
-    step("6/6 staff projections (MPD) + memos")
+    step("6/7 staff projections (MPD)")
     proj = projections.collect()
     print(proj)
 
+    step("7/7 memos (EA + country situation + full projections + speech)")
     from synthetic_council import memo
 
     last_speech = pl.read_parquet(PROCESSED_DIR / "last_speech_before_meeting.parquet")
