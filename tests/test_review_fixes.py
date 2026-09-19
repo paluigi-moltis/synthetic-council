@@ -39,6 +39,7 @@ def test_announcement_date_from_url_slug():
     u2 = "https://www.ecb.europa.eu/press/pr/date/2023/html/ecb.mp231214~9846e62f62.en.html"
     assert _slug_date(u2) is None
 
+
 def test_vintage_growth_asof_picks_newest_period():
     """Regression: as-of must take the newest (revdate, period), not just the
     newest revdate — otherwise meetings resolve to stale reference periods."""
