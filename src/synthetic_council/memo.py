@@ -164,20 +164,23 @@ def build_memos(
         # A person can qualify twice near handovers (old role in grace, new role
         # started) — keep ONE memo per person: the tenure already started at d,
         # else the latest one.
-        attendees = memberships.filter(
-            (pl.col("start").str.to_date() <= d)
-            & (pl.col("end").str.to_date() + pl.duration(days=45) >= d)
-        ).with_columns(
-            (
-                (pl.col("end").str.to_date() >= d).alias("_active")
-                & (pl.col("start").str.to_date() <= d)
-            ).alias("_started")
-        ).sort(["person", "_started", "start"], descending=[False, True, True]).unique(
-            subset=["person"], keep="first"
+        attendees = (
+            memberships.filter(
+                (pl.col("start").str.to_date() <= d)
+                & (pl.col("end").str.to_date() + pl.duration(days=45) >= d)
+            )
+            .with_columns(
+                (
+                    (pl.col("end").str.to_date() >= d).alias("_active")
+                    & (pl.col("start").str.to_date() <= d)
+                ).alias("_started")
+            )
+            .sort(["person", "_started", "start"], descending=[False, True, True])
+            .unique(subset=["person"], keep="first")
         )
-        ea_rows = macro.filter(
-            (pl.col("announcement_date") == d) & (pl.col("geo") == "EA")
-        ).sort("indicator")
+        ea_rows = macro.filter((pl.col("announcement_date") == d) & (pl.col("geo") == "EA")).sort(
+            "indicator"
+        )
         ea_out = [
             {
                 "indicator": _indicator_label(r["indicator"]),
@@ -220,12 +223,10 @@ def build_memos(
                 )
         # group by category in display order; union of target years;
         # pre-render one markdown table row per item
-        proj_years: list[str] = sorted(
-            {y for p in proj_out for y in p["by_year"]}
-        )
+        proj_years: list[str] = sorted({y for p in proj_out for y in p["by_year"]})
         for p in proj_out:
             cells = " | ".join(p["by_year"].get(y, "—") for y in proj_years)
-            p["line"] = f'| {p["item"]} | {p["unit"]} | {cells} |'
+            p["line"] = f"| {p['item']} | {p['unit']} | {cells} |"
         ycols = " | ".join(proj_years)
         projections_by_category = [
             {
@@ -253,8 +254,7 @@ def build_memos(
                     for r in crows.iter_rows(named=True)
                 ]
             sp = last_speech.filter(
-                (pl.col("meeting_date") == d)
-                & (pl.col("speaker") == pl.lit(a["person"]))
+                (pl.col("meeting_date") == d) & (pl.col("speaker") == pl.lit(a["person"]))
             )
             sp_row = sp.row(0, named=True) if sp.height else None
             last_speech_ctx = None
@@ -272,9 +272,9 @@ def build_memos(
                 country_name=COUNTRY_NAMES.get(a["country"] or "", ""),
                 meeting={
                     "announcement_date": str(d),
-                    "mro": m["mro"] or 0,
-                    "dfr": m["dfr"] or 0,
-                    "mlf": m["mlf"] or 0,
+                    "mro": m["mro"] if m["mro"] is not None else "n/a",
+                    "dfr": m["dfr"] if m["dfr"] is not None else "n/a",
+                    "mlf": m["mlf"] if m["mlf"] is not None else "n/a",
                 },
                 ea_rows=ea_out,
                 projections_by_category=projections_by_category,

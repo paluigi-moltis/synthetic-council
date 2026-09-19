@@ -26,7 +26,7 @@ from datetime import date, timedelta
 import polars as pl
 
 from synthetic_council.collectors.foedb import fetch_all
-from synthetic_council.collectors.rates import fetch_key_rates
+from synthetic_council.collectors.rates import decisions_from_daily_rates, fetch_key_rates
 from synthetic_council.config import PROCESSED_DIR
 
 MAX_EFFECTIVE_LAG_DAYS = 11
@@ -56,14 +56,12 @@ def true_date(url: str, published_at) -> date:
 
 
 def build() -> pl.DataFrame:
-    daily = fetch_key_rates(start="1998-12-01").with_columns(
-        pl.col("date").str.to_date("%Y-%m-%d")
-    )
+    daily = fetch_key_rates(start="1998-12-01")
+    if daily["date"].dtype == pl.String:
+        daily = daily.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
 
     pubs, _ = fetch_all()
-    mopo = pubs.filter(pl.col("title") == "Monetary policy decisions").sort(
-        "published_at"
-    )
+    mopo = pubs.filter(pl.col("title") == "Monetary policy decisions").sort("published_at")
 
     # canonical English URL (plain python loop: map_elements probes UDFs with a Series)
     def en_url(urls) -> str:
@@ -84,13 +82,9 @@ def build() -> pl.DataFrame:
     ]
     mopo = mopo.with_columns(pl.Series("announcement_date", ann, dtype=pl.Date))
 
-    # rate-change effective dates
-    chg = daily.with_columns(
-        [
-            (pl.col(c) != pl.col(c).shift(1)).alias(f"c_{c}")
-            for c in ("mro", "dfr", "mlf")
-        ]
-    ).filter(pl.col("c_mro") | pl.col("c_dfr") | pl.col("c_mlf"))
+    # rate-change effective dates (null-aware: see decisions_from_daily_rates —
+    # the spliced MRO series has no nulls, but keep the logic robust)
+    chg = decisions_from_daily_rates(daily)
     effective = chg.select(pl.col("date").alias("effective_date"), "mro", "dfr", "mlf")
 
     rows = []
@@ -101,9 +95,7 @@ def build() -> pl.DataFrame:
         cand = [
             e
             for e in eff_list
-            if timedelta(0)
-            <= (e["effective_date"] - a)
-            <= timedelta(days=MAX_EFFECTIVE_LAG_DAYS)
+            if timedelta(0) <= (e["effective_date"] - a) <= timedelta(days=MAX_EFFECTIVE_LAG_DAYS)
         ]
         if cand:
             e = cand[0]
@@ -134,9 +126,7 @@ def build() -> pl.DataFrame:
     df = pl.DataFrame(rows)
     unmatched = sorted({e["effective_date"] for e in eff_list} - used)
     if unmatched:
-        print(
-            f"WARNING: {len(unmatched)} rate-change dates matched no announcement: {unmatched}"
-        )
+        print(f"WARNING: {len(unmatched)} rate-change dates matched no announcement: {unmatched}")
     return df.select(
         "announcement_date",
         "decision",
