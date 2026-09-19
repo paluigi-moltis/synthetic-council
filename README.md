@@ -48,24 +48,28 @@ uv run python -m synthetic_council.memo
 Every dataset documents its endpoints, discovery path and verification in
 `docs/data-sources/`. No API keys required.
 
-## Datasets (verified 2026-08-21)
+## Datasets (verified 2026-09-19)
 
 | dataset | rows | span | source |
 |---|---|---|---|
-| `gc_decisions.parquet` | 317 meetings | 1999-03 → 2026-07 | ECB foedb (URL-slug dates) + SDMX FM |
+| `gc_decisions.parquet` | 318 meetings | 1999-03 → 2026-07 | ECB foedb (URL-slug dates) + SDMX FM |
 | `gc_memberships_wayback.parquet` | 93 tenures / 87 persons | 2004 → 2026 | Wayback GC pages (3 layouts) |
 | `speeches.parquet` | 3,052 | 1997 → 2026-07 | ECB speeches CSV |
 | `last_speech_before_meeting.parquet` | 1,888 meeting×speaker links | 1999 → 2026 | idem |
 | `macro_asof_panel.parquet` | ~39.5k rows | 1999 → 2026; EA vintages 2001+; country HICP/GDP/unemp (21 geos) | ECB RTD + PEEI + Eurostat + CISS + DG-ECFIN |
 | `staff_projections.parquet` | 154,686 | 2000 → 2026 | ECB MPD |
-| `memos/` | 5,148 briefings (all meetings 2004→2026) | — | assembled |
+| `memos/` | 5,175 briefings (all meetings 2004→2026) | — | assembled |
+
+Rate levels note: the MRO column splices the fixed-rate tender rate (MRR_FR)
+with the minimum bid rate (MRR_MBR) for the variable-rate-tender era
+2000-06-28 → 2008-10-14 — see `src/synthetic_council/collectors/rates.py`.
 
 ## Reproducing everything
 
 ```bash
 uv sync
 uv run python scripts/collect_all.py            # full pipeline (~30-40 min, no keys)
-uv run pytest                                   # 21 tests
+uv run pytest                                   # 25 tests
 uv run ruff check src/ scripts/ tests/
 ```
 

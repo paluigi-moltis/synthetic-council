@@ -90,9 +90,7 @@ class MacroVintagesResult:
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True
-    )
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True)
 
 
 # ---------------------------------------------------------------------------
@@ -140,9 +138,7 @@ def _parse_vtg_tsv(raw: bytes) -> pl.DataFrame:
 
 def download_peei(ds: str) -> pl.DataFrame:
     with _client() as c:
-        r = c.get(
-            ESTAT_SDMX.format(ds=ds), params={"format": "TSV", "compressed": "true"}
-        )
+        r = c.get(ESTAT_SDMX.format(ds=ds), params={"format": "TSV", "compressed": "true"})
         r.raise_for_status()
     return _parse_vtg_tsv(gzip_decompress(r.content))
 
@@ -171,9 +167,9 @@ def asof_vintage(
             pl.col("revdate") <= pl.col("announcement_date"),
         )
     )
-    latest = out.sort(
-        ["announcement_date", "revdate"], descending=[False, True]
-    ).unique(subset=["announcement_date", "period"], keep="first")
+    latest = out.sort(["announcement_date", "revdate"], descending=[False, True]).unique(
+        subset=["announcement_date", "period"], keep="first"
+    )
     return latest
 
 
@@ -238,10 +234,7 @@ def fetch_rtd_hicp_with_history() -> pl.DataFrame:
             pl.col("VALID_FROM").alias("valid_from"),
         )
         .with_columns(
-            pl.col("valid_from")
-            .str.slice(0, 10)
-            .str.to_date("%Y-%m-%d")
-            .alias("revdate")
+            pl.col("valid_from").str.slice(0, 10).str.to_date("%Y-%m-%d").alias("revdate")
         )
         .filter(pl.col("action") != "Delete")
     )
@@ -259,8 +252,7 @@ def fetch_rtd_gdp_with_history() -> pl.DataFrame:
     with _client() as c:
         r = c.get(
             f"{ECB_API}/RTD/Q.S0.S.G_GDPM_TO_C.E",
-            params={"format": "csvdata", "startPeriod": "1995-Q1",
-                    "includeHistory": "true"},
+            params={"format": "csvdata", "startPeriod": "1995-Q1", "includeHistory": "true"},
         )
         r.raise_for_status()
     df = pl.read_csv(io.BytesIO(r.content), infer_schema=False)
@@ -301,9 +293,7 @@ def fetch_sentiment() -> pl.DataFrame:
             raise RuntimeError("DG-ECFIN surveys zip not found in last 8 months")
     z = zipfile.ZipFile(io.BytesIO(raw))
     name = next(n for n in z.namelist() if n.endswith(".xlsx"))
-    df = pl.read_excel(
-        io.BytesIO(z.read(name)), sheet_name="MONTHLY", infer_schema_length=0
-    )
+    df = pl.read_excel(io.BytesIO(z.read(name)), sheet_name="MONTHLY", infer_schema_length=0)
     df = df.rename({df.columns[0]: "period"})
     records = []
     cols = df.columns[1:]

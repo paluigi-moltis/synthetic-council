@@ -48,8 +48,33 @@ def _client() -> httpx.Client:
     )
 
 
+def splice_mro_mbr(daily: pl.DataFrame, mbr: pl.DataFrame) -> pl.DataFrame:
+    """Splice the minimum-bid-rate series into the MRO fixed-rate column.
+
+    `daily` needs a `mro` column (the fixed rate, null during the variable-rate
+    tender era); `mbr` has columns date + `mro_mbr`. The fixed rate wins where
+    it exists; the min bid rate fills the rest. The raw fixed-rate column is
+    kept as `mro_fr` for provenance and the working `mro_mbr` column dropped.
+    """
+    out = daily.join(mbr, on="date", how="left", coalesce=True)
+    return (
+        out.with_columns(pl.col("mro").alias("mro_fr"))
+        .with_columns(pl.coalesce(["mro", "mro_mbr"]).alias("mro"))
+        .drop("mro_mbr")
+    )
+
+
 def fetch_key_rates(start: str = "1997-01-01") -> pl.DataFrame:
-    """Daily MRO/DFR/MLF levels from the ECB Data Portal (FM dataflow)."""
+    """Daily MRO/DFR/MLF levels from the ECB Data Portal (FM dataflow).
+
+    The MRO key (MRR_FR) is the *fixed-rate tender* rate: it does not exist for
+    the variable-rate-tender era 2000-06-28 → 2008-10-14 (MROs were allotted at
+    discretionary rates; the operative policy rate was the *minimum bid rate*,
+    series MRR_MBR — verified: MRR_FR is empty exactly on 2000-06-28 →
+    2008-10-14, and MRR_MBR covers exactly that window, handshaking with
+    MRR_FR at 3.75 on 2008-10-15). The two are spliced into a single `mro`
+    column; the raw fixed-rate series is kept as `mro_fr` for provenance.
+    """
     frames = []
     with _client() as c:
         for name, key in KEY_RATE_SERIES.items():
@@ -68,11 +93,24 @@ def fetch_key_rates(start: str = "1997-01-01") -> pl.DataFrame:
     out = frames[0]
     for f in frames[1:]:
         out = out.join(f, on="date", how="outer", coalesce=True)
-    return out.sort("date")
+    out = out.sort("date")
+    if "mro_mbr" in out.columns:
+        mbr = out.select("date", "mro_mbr")
+        out = splice_mro_mbr(out.drop("mro_mbr"), mbr)
+    return out
 
 
 def fetch_rate_change_table() -> pl.DataFrame:
-    """Historical 'with effect from' rate-change table from the ECB website."""
+    """Historical 'with effect from' rate-change table from the ECB website.
+
+    Table layout per row: [year] | date | DFR | MRO fixed | MRO min bid | MLF.
+    The year cell is present only on the first row of each year group and is
+    blank (&nbsp;) on continuation rows — the date may therefore sit in
+    cells[0] (year popped) or cells[1] (year cell blank). The '-' in one of the
+    two MRO columns marks the tender procedure not in use (fixed-rate tenders
+    before/after the 2000-06-28 → 2008-10-14 variable-rate-tender era, where
+    the operative rate was the minimum bid rate).
+    """
     with _client() as c:
         r = c.get(KEY_RATES_TABLE_URL)
         r.raise_for_status()
@@ -91,7 +129,7 @@ def fetch_rate_change_table() -> pl.DataFrame:
         "nov": 11,
         "dec": 12,
     }
-    recs: list[tuple[str, float, float, float]] = []
+    recs: list[tuple[str, float | None, float | None, float | None]] = []
     year = None
     for row in rows:
         cells = [
@@ -103,18 +141,39 @@ def fetch_rate_change_table() -> pl.DataFrame:
         if re.fullmatch(r"(19|20)\d{2}", cells[0]):  # year group header
             year = int(cells[0])
             cells = cells[1:]
-        m = re.match(r"(\d{1,2})\s+(\w{3})\.?", cells[0] or "")
-        if year and m and len(cells) >= 4:
-            day, mon = int(m.group(1)), months.get(m.group(2).lower())
-            if mon is None:
-                continue
-            try:
-                dfr = float(cells[1])
-                mro = float(cells[3] if cells[2] in {"-", ""} else cells[2])
-                mlf = float(cells[-1])
-            except ValueError:
-                continue
-            recs.append((f"{year}-{mon:02d}-{day:02d}", dfr, mro, mlf))
+        if year is None:
+            continue
+        # date cell: first cell that looks like '28 Jun.' (year cell may be blank)
+        date_cell_idx = next(
+            (i for i, c in enumerate(cells) if re.match(r"\d{1,2}\s+\w{3}", c)),
+            None,
+        )
+        if date_cell_idx is None or len(cells) - date_cell_idx < 4:
+            continue
+        m = re.match(r"(\d{1,2})\s+([A-Za-z]{3})", cells[date_cell_idx])
+        if m is None:
+            continue
+        day, mon = int(m.group(1)), months.get(m.group(2).lower())
+        if mon is None:
+            continue
+        vals = cells[date_cell_idx + 1 :]
+
+        def _num(s: str) -> float | None:
+            # '-' marks "not applicable" (the tender procedure not in use);
+            # '−' is the Unicode minus used for negative rates.
+            if s in {"-", ""}:
+                return None
+            return float(s.replace("−", "-"))
+
+        try:
+            # value layout: DFR | MRO fixed | MRO min bid | MLF — exactly one
+            # of the two MRO columns is filled; take whichever it is.
+            dfr = _num(vals[0])
+            mro = _num(vals[1]) if _num(vals[1]) is not None else _num(vals[2])
+            mlf = _num(vals[-1])
+        except ValueError:
+            continue
+        recs.append((f"{year}-{mon:02d}-{day:02d}", dfr, mro, mlf))
     return pl.DataFrame(
         {
             "date": [r[0] for r in recs],
@@ -137,9 +196,7 @@ def fetch_meeting_calendar() -> pl.DataFrame:
         r = c.get(GC_CALENDAR_URL)
         r.raise_for_status()
     body = _main_content(r.text)
-    items = re.findall(
-        r"<dt>\s*(\d{2}/\d{2}/\d{4})\s*</dt>\s*<dd>(.*?)</dd>", body, re.S
-    )
+    items = re.findall(r"<dt>\s*(\d{2}/\d{2}/\d{4})\s*</dt>\s*<dd>(.*?)</dd>", body, re.S)
     recs = []
     for date_raw, desc in items:
         d = f"{date_raw[6:]}-{date_raw[3:5]}-{date_raw[:2]}"
@@ -164,10 +221,23 @@ def _main_content(html: str) -> str:
 
 
 def decisions_from_daily_rates(daily: pl.DataFrame) -> pl.DataFrame:
-    """Derive decision events: first day each facility level changes vs prior day."""
-    df = daily.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
+    """Derive decision events: first day each facility level changes vs prior day.
+
+    Null-aware: a null → value transition counts as a change (the MRO series
+    starts null on the days before the first fixed-rate/min-bid observation,
+    and unspliced gap boundaries would otherwise swallow real changes).
+    """
+    df = daily
+    if df["date"].dtype == pl.String:
+        df = df.with_columns(pl.col("date").str.to_date("%Y-%m-%d"))
     for c in ("mro", "dfr", "mlf"):
-        df = df.with_columns((pl.col(c) != pl.col(c).shift(1)).alias(f"_chg_{c}"))
+        df = df.with_columns(
+            (
+                pl.col(c).is_not_null()
+                & pl.col(c).ne_missing(pl.col(c).shift(1))
+                & pl.col(c).shift(1).is_not_null()
+            ).alias(f"_chg_{c}")
+        )
     df = df.with_columns(
         (pl.col("_chg_mro") | pl.col("_chg_dfr") | pl.col("_chg_mlf")).alias("changed")
     )

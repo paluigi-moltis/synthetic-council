@@ -70,9 +70,7 @@ class MembershipRow:
 
 
 def http() -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT}, timeout=120, follow_redirects=True
-    )
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=120, follow_redirects=True)
 
 
 def wayback_snapshots(year_from: int = 1999, year_to: int = 2026) -> list[str]:
@@ -80,9 +78,7 @@ def wayback_snapshots(year_from: int = 1999, year_to: int = 2026) -> list[str]:
     import time
 
     stamps: list[str] = []
-    urls = list(GC_PAGE_CANDIDATES) + [
-        "ecb.int/ecb/orga/decisions/govc/html/index.en.html"
-    ]
+    urls = list(GC_PAGE_CANDIDATES) + ["ecb.int/ecb/orga/decisions/govc/html/index.en.html"]
     with http() as c:
         for url in urls:
             try:
@@ -121,9 +117,7 @@ def parse_members_page(html: str) -> list[tuple[str, str]]:
     """
     entries: list[tuple[str, str]] = []
     # legacy layout (<strong>Name</strong> ... <br/> ROLE)
-    for m in re.finditer(
-        r"<strong>([^<]+)</strong>.*?<br/>\s*([^<]+?)\s*</div>", html, re.S
-    ):
+    for m in re.finditer(r"<strong>([^<]+)</strong>.*?<br/>\s*([^<]+?)\s*</div>", html, re.S):
         entries.append((m.group(1).strip(), m.group(2).strip()))
     # 2015-2020 layout: <p class="ecb-imgTitle">Name</p> ... <p class="ecb-imgDesc">ROLE</p>
     if not entries:
@@ -135,9 +129,7 @@ def parse_members_page(html: str) -> list[tuple[str, str]]:
             entries.append((m.group(1).strip(), m.group(2).strip()))
     # current card layout
     if not entries:
-        for m in re.finditer(
-            r'class="title">([^<]+)</div>.*?<p>([^<]+)</p>', html, re.S
-        ):
+        for m in re.finditer(r'class="title">([^<]+)</div>.*?<p>([^<]+)</p>', html, re.S):
             entries.append((m.group(1).strip(), m.group(2).strip()))
     # unescape entities
     out = []
@@ -166,10 +158,7 @@ def normalise_role(name: str, role_desc: str) -> tuple[str, str | None]:
     rd = role_desc.lower()
     if "president of the ecb" in rd and "vice" not in rd:
         return ROLE_PRESIDENT, None
-    if (
-        "vice-president of the ecb" in rd
-        or "vice-president of the european central bank" in rd
-    ):
+    if "vice-president of the ecb" in rd or "vice-president of the european central bank" in rd:
         return ROLE_VICE_PRESIDENT, None
     if "executive board" in rd:
         return ROLE_EXEC_BOARD, None
@@ -216,21 +205,15 @@ def _bank_match(role_desc: str, bank: str) -> bool:
     return any(a in d for a in aliases.get(bank, [key]))
 
 
-def build_memberships(
-    snapshots: list[str], max_snaps: int | None = None
-) -> list[MembershipRow]:
+def build_memberships(snapshots: list[str], max_snaps: int | None = None) -> list[MembershipRow]:
     """Walk snapshots in time order, merging consecutive (person, role) observations
     into tenures."""
     from datetime import datetime, timedelta
 
-    snaps = (
-        snapshots
-        if max_snaps is None
-        else snapshots[:: max(1, len(snapshots) // max_snaps)]
-    )
-    observations: list[tuple[str, str, str, str | None, str]] = (
-        []
-    )  # date, person, role, iso, source
+    snaps = snapshots if max_snaps is None else snapshots[:: max(1, len(snapshots) // max_snaps)]
+    observations: list[
+        tuple[str, str, str, str | None, str]
+    ] = []  # date, person, role, iso, source
     from synthetic_council.collectors.persons import canonicalise
 
     with http() as c:
@@ -256,15 +239,36 @@ def build_memberships(
                 continue
             for name, role_desc in entries:
                 role, iso = normalise_role(name, role_desc)
-                observations.append(
-                    (date, canonicalise(name), role, iso, f"wayback:{ts}")
-                )
+                observations.append((date, canonicalise(name), role, iso, f"wayback:{ts}"))
     # merge observations into tenures (drop junk person names at source)
     _junk_words = (
-        "<", ">", "{", "}", "+", "innerHTML", "Council", "stability", "Insights",
-        "Statistics", "euro", "Research", "cookie", "page?", "happy", "Explore",
-        "Supervision", "Payment", "Market", "Press", "Careers", "Procurement",
-        "Sir", "Madam", "Governance", "Calendar", "Publications",
+        "<",
+        ">",
+        "{",
+        "}",
+        "+",
+        "innerHTML",
+        "Council",
+        "stability",
+        "Insights",
+        "Statistics",
+        "euro",
+        "Research",
+        "cookie",
+        "page?",
+        "happy",
+        "Explore",
+        "Supervision",
+        "Payment",
+        "Market",
+        "Press",
+        "Careers",
+        "Procurement",
+        "Sir",
+        "Madam",
+        "Governance",
+        "Calendar",
+        "Publications",
     )
 
     def _junk(n: str) -> bool:
@@ -275,6 +279,7 @@ def build_memberships(
             or any(ch.isdigit() for ch in n)
             or any(s in n for s in _junk_words)
         )
+
     tenures: dict[tuple[str, str], dict] = {}
     for date, person, role, iso, source in sorted(observations):
         if _junk(person):
@@ -306,9 +311,9 @@ def build_memberships(
         rs.sort(key=lambda r: r["start"])
         for a, b in zip(rs, rs[1:], strict=False):
             if b["start"] <= a["end"]:
-                new_end = (
-                    datetime.strptime(b["start"], "%Y-%m-%d") - timedelta(days=1)
-                ).strftime("%Y-%m-%d")
+                new_end = (datetime.strptime(b["start"], "%Y-%m-%d") - timedelta(days=1)).strftime(
+                    "%Y-%m-%d"
+                )
                 if new_end >= a["start"]:
                     a["end"] = new_end
     return [MembershipRow(**r) for r in rows]

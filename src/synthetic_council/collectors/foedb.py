@@ -96,12 +96,9 @@ def fetch_all(sleep_s: float = 0.25) -> tuple[pl.DataFrame, FoedbResult]:
             "type": [r["type"] for r in records],
             "boardmember": [r["boardmember"] for r in records],
             "document_urls": [r["documentTypes"] for r in records],
-            "title": [
-                ((r["publicationProperties"] or {}).get("Title")) or "" for r in records
-            ],
+            "title": [((r["publicationProperties"] or {}).get("Title")) or "" for r in records],
             "subtitle": [
-                "; ".join((r["publicationProperties"] or {}).get("Subtitle") or [])
-                for r in records
+                "; ".join((r["publicationProperties"] or {}).get("Subtitle") or []) for r in records
             ],
         }
     ).with_columns(

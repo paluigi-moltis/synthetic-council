@@ -15,9 +15,7 @@ from synthetic_council.collectors.country_macro import (
 
 
 def _dates(*ds: str) -> pl.DataFrame:
-    return pl.DataFrame(
-        {"announcement_date": [dt.date.fromisoformat(x) for x in ds]}
-    )
+    return pl.DataFrame({"announcement_date": [dt.date.fromisoformat(x) for x in ds]})
 
 
 def test_month_avail_mid_next_month():
@@ -43,9 +41,7 @@ def test_asof_no_lookahead():
             "value": [3.7, 1.5],
         }
     )
-    out = _asof_latest_published(
-        series, _dates("2022-07-21"), "gdp_yoy", freq="Q", avail_days=31
-    )
+    out = _asof_latest_published(series, _dates("2022-07-21"), "gdp_yoy", freq="Q", avail_days=31)
     assert out.height == 1
     assert out["ref_period"][0] == "2022-Q1"
     assert out["value"][0] == 3.7
@@ -60,9 +56,7 @@ def test_asof_per_geo():
             "value": [8.3, 8.5],
         }
     )
-    out = _asof_latest_published(
-        series, _dates("2022-07-21"), "hicp_yoy", freq="M", avail_days=17
-    )
+    out = _asof_latest_published(series, _dates("2022-07-21"), "hicp_yoy", freq="M", avail_days=17)
     assert out.height == 2
     by_geo = dict(zip(out["geo"].to_list(), out["value"].to_list(), strict=False))
     assert by_geo == {"DE": 8.3, "IT": 8.5}
