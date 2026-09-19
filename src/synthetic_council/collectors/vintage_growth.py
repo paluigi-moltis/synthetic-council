@@ -47,8 +47,7 @@ def vintage_growth(
     level *as known at t*.
     """
     df = (
-        releases.rename({period_col: "period", value_col: "value",
-                         revdate_col: "revdate"})
+        releases.rename({period_col: "period", value_col: "value", revdate_col: "revdate"})
         .filter(pl.col("revdate").is_not_null() & pl.col("value").is_not_null())
         .unique(subset=["period", "revdate"], keep="last")
     )
@@ -77,9 +76,7 @@ def vintage_growth(
     )
 
 
-def asof_growth(
-    growth_events: pl.DataFrame, meetings: pl.DataFrame
-) -> pl.DataFrame:
+def asof_growth(growth_events: pl.DataFrame, meetings: pl.DataFrame) -> pl.DataFrame:
     """Latest growth event per meeting date -> (announcement_date, period, growth).
 
     'Latest' = the event with the greatest (revdate, qmi): newest release first,
@@ -89,9 +86,7 @@ def asof_growth(
     return (
         meetings.select(pl.col("announcement_date").unique())
         .join_where(ev, pl.col("revdate") <= pl.col("announcement_date"))
-        .sort(
-            ["announcement_date", "revdate", "qmi"], descending=[False, True, True]
-        )
+        .sort(["announcement_date", "revdate", "qmi"], descending=[False, True, True])
         .unique(subset=["announcement_date"], keep="first")
         .select("announcement_date", "period", "growth")
     )

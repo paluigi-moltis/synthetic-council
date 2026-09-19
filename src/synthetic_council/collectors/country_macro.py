@@ -36,8 +36,27 @@ ESTAT_SDMX = "https://ec.europa.eu/eurostat/api/dissemination/sdmx/2.1/data"
 # Eurostat "EA" = euro area changing composition (EA19/EA20 are fixed rosters);
 # consistent with ECB S0/U2 usage elsewhere in this project.
 EA_GEOS = [
-    "EA", "AT", "BE", "CY", "DE", "EE", "ES", "FI", "FR", "EL",
-    "HR", "IE", "IT", "LT", "LU", "LV", "MT", "NL", "PT", "SI", "SK",
+    "EA",
+    "AT",
+    "BE",
+    "CY",
+    "DE",
+    "EE",
+    "ES",
+    "FI",
+    "FR",
+    "EL",
+    "HR",
+    "IE",
+    "IT",
+    "LT",
+    "LU",
+    "LV",
+    "MT",
+    "NL",
+    "PT",
+    "SI",
+    "SK",
 ]
 
 
@@ -48,9 +67,7 @@ class CountryMacroResult:
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True
-    )
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=600, follow_redirects=True)
 
 
 def _get_tsv(client: httpx.Client, path: str) -> pl.DataFrame:
@@ -62,9 +79,7 @@ def _get_tsv(client: httpx.Client, path: str) -> pl.DataFrame:
         raw = gzip.decompress(raw)
     df = pl.read_csv(io.BytesIO(raw), separator="\t", infer_schema=False)
     if df.height == 0:
-        return pl.DataFrame(
-            schema={"geo": pl.String, "period": pl.String, "value": pl.Float64}
-        )
+        return pl.DataFrame(schema={"geo": pl.String, "period": pl.String, "value": pl.Float64})
     key_col = df.columns[0]
     dim_names = [d.split("\\")[0] for d in key_col.split(",")]
     records = []
@@ -81,9 +96,8 @@ def _get_tsv(client: httpx.Client, path: str) -> pl.DataFrame:
 
 
 def _month_idx(col: str) -> pl.Expr:
-    return (
-        pl.col(col).str.slice(0, 4).cast(pl.Int32) * 12
-        + pl.col(col).str.slice(5, 2).cast(pl.Int32)
+    return pl.col(col).str.slice(0, 4).cast(pl.Int32) * 12 + pl.col(col).str.slice(5, 2).cast(
+        pl.Int32
     )
 
 
@@ -109,10 +123,7 @@ def _quarter_avail(col: str, days: int) -> pl.Expr:
     year = pl.col(col).str.slice(0, 4).cast(pl.Int32)
     q = pl.col(col).str.slice(6, 1).cast(pl.Int32)
     return (
-        pl.date(year, q * 3 - 2, 1)
-        .dt.offset_by("1q")
-        .dt.offset_by("-1d")
-        .dt.offset_by(f"{days}d")
+        pl.date(year, q * 3 - 2, 1).dt.offset_by("1q").dt.offset_by("-1d").dt.offset_by(f"{days}d")
     )
 
 
@@ -130,16 +141,10 @@ def _asof_latest_published(
     avail_days: days between period end and first publication.
     """
     avail = (
-        _month_avail("period", avail_days)
-        if freq == "M"
-        else _quarter_avail("period", avail_days)
+        _month_avail("period", avail_days) if freq == "M" else _quarter_avail("period", avail_days)
     )
-    s = series.select("geo", "period", "value").with_columns(
-        avail.alias("avail_from")
-    )
-    grid = dates.join(s.select("geo").unique(), how="cross").sort(
-        "announcement_date"
-    )
+    s = series.select("geo", "period", "value").with_columns(avail.alias("avail_from"))
+    grid = dates.join(s.select("geo").unique(), how="cross").sort("announcement_date")
     return (
         grid.join_asof(
             s.sort("avail_from"),
@@ -170,14 +175,10 @@ def fetch_country_hicp(client: httpx.Client) -> pl.DataFrame:
     (prc_hicp_manr data ends 2025-12).
     """
     geos = "+".join(EA_GEOS)
-    df = _get_tsv(
-        client, f"prc_hicp_minr/M.RCH_A.TOTAL+TOT_X_NRG_FOOD.{geos}"
-    )
+    df = _get_tsv(client, f"prc_hicp_minr/M.RCH_A.TOTAL+TOT_X_NRG_FOOD.{geos}")
     ind_map = {"TOTAL": "hicp_yoy", "TOT_X_NRG_FOOD": "hicp_core"}
     return (
-        df.with_columns(
-            pl.col("coicop18").replace(ind_map, default=None).alias("indicator")
-        )
+        df.with_columns(pl.col("coicop18").replace(ind_map, default=None).alias("indicator"))
         .filter(pl.col("indicator").is_not_null())
         .select("geo", "period", "value", "indicator")
     )
@@ -188,7 +189,9 @@ def fetch_country_gdp(client: httpx.Client) -> pl.DataFrame:
     geos = "+".join(EA_GEOS)
     df = _get_tsv(client, f"namq_10_gdp/Q.CLV_PCH_SM.SCA.B1GQ.{geos}")
     return df.select(
-        "geo", "period", pl.col("value").alias("value"),
+        "geo",
+        "period",
+        pl.col("value").alias("value"),
         pl.lit("gdp_yoy").alias("indicator"),
     )
 
@@ -244,23 +247,17 @@ def fetch_country_unemp_latest(client: httpx.Client) -> pl.DataFrame:
     ).select("geo", "period", "value")
 
 
-def _asof_unemp_vintage(
-    vtg: pl.DataFrame, dates: pl.DataFrame
-) -> pl.DataFrame:
+def _asof_unemp_vintage(vtg: pl.DataFrame, dates: pl.DataFrame) -> pl.DataFrame:
     """As-of unemployment from true vintages.
 
     A vintage row (revdate, period) is visible at meeting d if revdate <= d;
     the vintage stores only CHANGES, so for each (geo, period) take the latest
     revdate <= d, then the latest published period.
     """
-    vis = dates.join_where(
-        vtg, pl.col("revdate") <= pl.col("announcement_date")
-    )
-    latest = (
-        vis.sort(["announcement_date", "geo", "revdate", "period"],
-                 descending=[False, False, True, True])
-        .unique(subset=["announcement_date", "geo"], keep="first")
-    )
+    vis = dates.join_where(vtg, pl.col("revdate") <= pl.col("announcement_date"))
+    latest = vis.sort(
+        ["announcement_date", "geo", "revdate", "period"], descending=[False, False, True, True]
+    ).unique(subset=["announcement_date", "geo"], keep="first")
     return latest.select(
         "announcement_date",
         "geo",
@@ -276,9 +273,7 @@ def build_country_macro(meetings: pl.DataFrame) -> pl.DataFrame:
     Indicators: hicp_yoy, hicp_core, gdp_yoy, unemp (vintage when available,
     2021+, else latest-revised with 1-month lag).
     """
-    dates = (
-        meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
-    )
+    dates = meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
     with _client() as c:
         hicp = fetch_country_hicp(c)
         gdp = fetch_country_gdp(c)
@@ -290,24 +285,32 @@ def build_country_macro(meetings: pl.DataFrame) -> pl.DataFrame:
         # publishers and month-end meetings
         _asof_latest_published(
             hicp.filter(pl.col("indicator") == "hicp_yoy").drop("indicator"),
-            dates, "hicp_yoy", freq="M", avail_days=17,
+            dates,
+            "hicp_yoy",
+            freq="M",
+            avail_days=17,
         ),
         _asof_latest_published(
             hicp.filter(pl.col("indicator") == "hicp_core").drop("indicator"),
-            dates, "hicp_core", freq="M", avail_days=17,
+            dates,
+            "hicp_core",
+            freq="M",
+            avail_days=17,
         ),
         # QNA flash estimate ~t+30/31d after quarter end
         _asof_latest_published(
-            gdp.drop("indicator"), dates, "gdp_yoy", freq="Q", avail_days=31,
+            gdp.drop("indicator"),
+            dates,
+            "gdp_yoy",
+            freq="Q",
+            avail_days=31,
         ),
     ]
 
     # unemployment: true vintages where they exist (revdate <= d), else
     # latest-revised with the LFS monthly news release (~start of m+2)
     vint = _asof_unemp_vintage(unemp_vtg, dates) if unemp_vtg.height else None
-    fallback_all = _asof_latest_published(
-        unemp_latest, dates, "unemp", freq="M", avail_days=32
-    )
+    fallback_all = _asof_latest_published(unemp_latest, dates, "unemp", freq="M", avail_days=32)
     if vint is not None and vint.height:
         fallback = fallback_all.join(
             vint.select("announcement_date", "geo"),

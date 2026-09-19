@@ -26,8 +26,10 @@ def main() -> None:
 
     step("1/6 foedb publications database (all ECB press releases since 1992)")
     res = foedb.collect()
-    print(f"records={res.n_records} mopo={res.mopo_releases} "
-          f"span={res.first_decision}..{res.last_decision}")
+    print(
+        f"records={res.n_records} mopo={res.mopo_releases} "
+        f"span={res.first_decision}..{res.last_decision}"
+    )
 
     step("2/6 speeches: download official ECB all-speeches CSV")
     from synthetic_council.collectors import speeches
@@ -54,8 +56,10 @@ def main() -> None:
     from synthetic_council.collectors import decisions
 
     dec = decisions.collect()
-    print(f"meetings={dec.height} "
-          f"span={dec['announcement_date'].min()}..{dec['announcement_date'].max()}")
+    print(
+        f"meetings={dec.height} "
+        f"span={dec['announcement_date'].min()}..{dec['announcement_date'].max()}"
+    )
 
     step("5/7 macro as-of panel (RTD/PEEI vintages, CISS, sentiment)")
     from synthetic_council.collectors import macro_panel
@@ -73,7 +77,9 @@ def main() -> None:
     last_speech = pl.read_parquet(PROCESSED_DIR / "last_speech_before_meeting.parquet")
     memberships = pl.read_parquet(RAW_DIR / "gc_memberships_wayback.parquet")
     memo_res = memo.build_memos(
-        dec, memberships, panel,
+        dec,
+        memberships,
+        panel,
         pl.read_parquet(RAW_DIR / "mpd_projections.parquet"),
         last_speech,
         Path("data/processed/memos"),

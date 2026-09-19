@@ -41,9 +41,7 @@ class SpeechesResult:
 
 
 def _client() -> httpx.Client:
-    return httpx.Client(
-        headers={"User-Agent": USER_AGENT}, timeout=180, follow_redirects=True
-    )
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=180, follow_redirects=True)
 
 
 def download_csv() -> bytes:
@@ -110,17 +108,13 @@ def last_speech_before_meetings(
     `meetings` must have columns: date (Date), is_decision_day (bool).
     """
     sp = (
-        speeches.filter(
-            pl.col("contents").str.len_bytes() > 200
-        )  # substantive texts only
+        speeches.filter(pl.col("contents").str.len_bytes() > 200)  # substantive texts only
         .with_columns(pl.col("speakers").str.split("|").list.first().alias("speaker"))
         .select("date", "speaker", "title", "subtitle", "contents")
         .sort("date")
     )
     decisions = (
-        meetings.filter(pl.col("is_decision_day")).select(
-            pl.col("announcement_date").alias("date")
-        )
+        meetings.filter(pl.col("is_decision_day")).select(pl.col("announcement_date").alias("date"))
         if "announcement_date" in meetings.columns
         else meetings.filter(pl.col("is_decision_day")).select("date")
     ).unique()

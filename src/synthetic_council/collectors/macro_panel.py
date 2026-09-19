@@ -24,8 +24,7 @@ def _asof_from_vintages(
     j = dates.join_where(
         v,
         pl.col("revdate") <= pl.col("announcement_date"),
-        pl.col("next_revdate").is_null()
-        | (pl.col("announcement_date") < pl.col("next_revdate")),
+        pl.col("next_revdate").is_null() | (pl.col("announcement_date") < pl.col("next_revdate")),
     )
     return (
         j.sort(["announcement_date", "period"], descending=[False, True])
@@ -45,9 +44,7 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
 
     Returns long panel: announcement_date | geo (EA or ISO2) | indicator | ref_period | value
     """
-    dates = (
-        meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
-    )
+    dates = meetings.select(pl.col("announcement_date")).unique().sort("announcement_date")
     out: list[pl.DataFrame] = []
 
     # --- EA HICP (true vintages, RTD) ---
@@ -64,9 +61,7 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
     )
     # compute yoy within each vintage window: index level 12 months earlier under
     # the vintage visible at the row's own validity interval
-    hicp = hicp.with_columns(
-        pl.col("revdate").shift(-1).over("period").alias("next_revdate")
-    )
+    hicp = hicp.with_columns(pl.col("revdate").shift(-1).over("period").alias("next_revdate"))
     # for each period, the index level 12m before *as known at that time*: join
     # period-12 row whose validity interval covers this row's revdate
     hicp = hicp.with_columns(
@@ -90,14 +85,10 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
                 | (pl.col("revdate") < pl.col("next_revdate_right"))
             )
         )
-        .with_columns(
-            ((pl.col("hicp_ea") / pl.col("prev") - 1) * 100).alias("hicp_yoy")
-        )
+        .with_columns(((pl.col("hicp_ea") / pl.col("prev") - 1) * 100).alias("hicp_yoy"))
     )
     ea_hicp = _asof_from_vintages(
-        hicp.filter(pl.col("hicp_yoy").is_not_null()).select(
-            "revdate", "period", "hicp_yoy"
-        ),
+        hicp.filter(pl.col("hicp_yoy").is_not_null()).select("revdate", "period", "hicp_yoy"),
         dates,
         "hicp_yoy",
         "hicp_yoy",
@@ -107,27 +98,30 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
 
     # --- EA GDP growth (true vintages, ECB RTD G_GDPM_TO_C; 2001-01 ->) ---
     gdp = fetch_rtd_gdp_with_history().sort(["period", "revdate"])
-    gdp = gdp.with_columns(
-        pl.col("revdate").shift(-1).over("period").alias("next_revdate")
-    )
+    gdp = gdp.with_columns(pl.col("revdate").shift(-1).over("period").alias("next_revdate"))
     gdp = gdp.with_columns(
         pl.col("period").str.slice(0, 4).cast(pl.Int32).alias("_y"),
         pl.col("period").str.slice(-1).cast(pl.Int32).alias("_q"),
     ).with_columns((pl.col("_y") * 4 + pl.col("_q")).alias("qmi"))
     lag_g = gdp.select("qmi", "revdate", "next_revdate", pl.col("gdp_ea").alias("prev"))
-    gdp = gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev")).join(
-        lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left"
-    ).filter(
-        (pl.col("revdate_right") <= pl.col("revdate"))
-        & (
-            pl.col("next_revdate_right").is_null()
-            | (pl.col("revdate") < pl.col("next_revdate_right"))
+    gdp = (
+        gdp.with_columns((pl.col("qmi") - 4).alias("qmi_prev"))
+        .join(lag_g, left_on=["qmi_prev"], right_on=["qmi"], how="left")
+        .filter(
+            (pl.col("revdate_right") <= pl.col("revdate"))
+            & (
+                pl.col("next_revdate_right").is_null()
+                | (pl.col("revdate") < pl.col("next_revdate_right"))
+            )
         )
-    ).with_columns(((pl.col("gdp_ea") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
+        .with_columns(((pl.col("gdp_ea") / pl.col("prev") - 1) * 100).alias("gdp_yoy"))
+    )
     ea_gdp = _asof_from_vintages(
-        gdp.filter(pl.col("gdp_yoy").is_not_null())
-        .select("revdate", "period", "gdp_yoy"),
-        dates, "gdp_yoy", "gdp_yoy", "EA",
+        gdp.filter(pl.col("gdp_yoy").is_not_null()).select("revdate", "period", "gdp_yoy"),
+        dates,
+        "gdp_yoy",
+        "gdp_yoy",
+        "EA",
     )
     out.append(ea_gdp)
 
@@ -160,10 +154,7 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
     )
     dates_m = dates.with_columns(
         (
-            (
-                pl.col("announcement_date").dt.year() * 12
-                + pl.col("announcement_date").dt.month()
-            )
+            (pl.col("announcement_date").dt.year() * 12 + pl.col("announcement_date").dt.month())
             - 2
         ).alias("pm_avail")
     ).sort("pm_avail")
@@ -216,9 +207,7 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
                 continue
             asof = (
                 dates.sort("announcement_date")
-                .with_columns(
-                    pl.col("announcement_date").dt.truncate("1mo").alias("am")
-                )
+                .with_columns(pl.col("announcement_date").dt.truncate("1mo").alias("am"))
                 .join_asof(
                     si.sort("period"),
                     left_on="am",
@@ -259,20 +248,15 @@ def build_macro_panel(meetings: pl.DataFrame) -> pl.DataFrame:
             on=["announcement_date", "indicator"],
             how="left",
         )
-        .filter(
-            pl.col("rt_ref").is_null() | (pl.col("ref_period") > pl.col("rt_ref"))
-        )
+        .filter(pl.col("rt_ref").is_null() | (pl.col("ref_period") > pl.col("rt_ref")))
         .drop("rt_ref")
     )
-    panel = pl.concat(
-        [panel, ea_new, full_country.filter(pl.col("geo") != "EA")]
-    )
+    panel = pl.concat([panel, ea_new, full_country.filter(pl.col("geo") != "EA")])
     # splice replaces the older RTD/LFSI row: keep latest ref_period per
     # (date, geo, indicator) — duplicates only arise when the Eurostat splice
     # is strictly newer, same string format per indicator
-    panel = (
-        panel.sort(["announcement_date", "geo", "indicator", "ref_period"])
-        .unique(subset=["announcement_date", "geo", "indicator"], keep="last")
+    panel = panel.sort(["announcement_date", "geo", "indicator", "ref_period"]).unique(
+        subset=["announcement_date", "geo", "indicator"], keep="last"
     )
     return panel.sort("announcement_date", "geo", "indicator")
 
