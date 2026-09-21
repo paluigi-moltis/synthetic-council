@@ -100,10 +100,19 @@ OpenAI-compatible endpoint** (`--generator openai_compat` with
 extraction is always Jev on the gateway.
 
 ```bash
-# build memos first (see Reproducing), then e.g.:
+# build memos first (see Reproducing), then one meeting:
 uv run python scripts/run_simulation.py 2022-07-21 --rounds 2
+
+# EVERY meeting that has memos, oldest first, resumable (re-running skips
+# meetings whose simulation_<date>.json already exists):
+uv run python scripts/run_simulation.py --all
+
+# restrict to the true-vintage era onward:
+uv run python scripts/run_simulation.py --all --from 2015
+
 # validate config + memos without API calls:
-uv run python scripts/run_simulation.py 2022-07-21 --dry-run
+uv run python scripts/run_simulation.py --all --dry-run
+
 # live 3-agent pipeline check on synthetic memos (no dataset needed):
 uv run python scripts/simulation_smoke_live.py
 ```
